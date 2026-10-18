@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
+  base: '/smart-plant-identification/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

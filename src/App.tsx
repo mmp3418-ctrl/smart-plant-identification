@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { AppDataProvider } from '@/context/AppDataContext'
 import { RootLayout } from '@/layouts/RootLayout'
@@ -17,7 +17,8 @@ export default function App() {
   return (
     <AuthProvider>
       <AppDataProvider>
-        <BrowserRouter>
+        {/* HashRouter avoids GitHub Pages 404s on direct sub-route loads */}
+        <HashRouter>
           <Routes>
             <Route element={<RootLayout />}>
               <Route index element={<HomePage />} />
@@ -32,7 +33,7 @@ export default function App() {
               <Route path="register" element={<RegisterPage />} />
             </Route>
           </Routes>
-        </BrowserRouter>
+        </HashRouter>
       </AppDataProvider>
     </AuthProvider>
   )
