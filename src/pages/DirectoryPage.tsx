@@ -24,10 +24,10 @@ export function DirectoryPage() {
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
       <div className="mb-5">
-        <h1 className="text-xl font-extrabold text-ink sm:text-2xl">
+        <h1 className="text-xl font-extrabold text-ink dark:text-stone-100 sm:text-2xl">
           دليل النباتات
         </h1>
-        <p className="mt-1 text-sm text-muted">
+        <p className="mt-1 text-sm text-muted dark:text-stone-300">
           ابحث وصنّف النباتات حسب الاسم والتربة والبيئة
         </p>
       </div>
@@ -51,12 +51,16 @@ export function DirectoryPage() {
         </Button>
       </div>
 
-      <div className="mb-4 text-sm text-muted">
-        <span className="font-semibold text-ink">{results.length}</span> نتيجة
+      <div className="mb-4 text-sm text-muted dark:text-stone-300">
+        <span className="font-semibold text-ink dark:text-stone-100">
+          {results.length}
+        </span>{' '}
+        نتيجة
         {filters.query ? (
           <>
             {' '}
-            لـ «<span className="text-ink">{filters.query}</span>»
+            لـ «
+            <span className="text-ink dark:text-stone-100">{filters.query}</span>»
           </>
         ) : null}
       </div>
@@ -64,7 +68,7 @@ export function DirectoryPage() {
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
         <div
           className={cn(
-            'rounded-lg border border-line bg-surface p-4',
+            'rounded-2xl glass-panel p-4',
             filtersOpen ? 'block' : 'hidden lg:block',
           )}
         >
@@ -85,7 +89,7 @@ export function DirectoryPage() {
                   إعادة تعيين البحث
                 </Button>
               }
-              className="rounded-lg border border-dashed border-line bg-surface"
+              className="rounded-2xl border border-dashed border-line/80 glass-panel"
             />
           ) : (
             <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 xl:grid-cols-3">

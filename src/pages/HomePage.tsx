@@ -10,19 +10,21 @@ export function HomePage() {
 
   return (
     <div>
-      {/* Compact editorial intro — not a wasteful hero */}
-      <section className="border-b border-line bg-surface">
+      <section className="border-b border-white/20 dark:border-stone-700/40 glass-panel">
         <div className="container-app py-8 sm:py-10 lg:py-12">
           <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
             <div>
               <Badge variant="brand" className="mb-3">
                 مشروع تخرج جامعي
               </Badge>
-              <h1 className="text-balance text-2xl font-extrabold leading-snug text-ink sm:text-3xl lg:text-[2.15rem]">
+              <h1 className="text-balance text-2xl font-extrabold leading-snug text-ink dark:text-stone-100 sm:text-3xl lg:text-[2.15rem]">
                 عرّف نباتك من صورة،
-                <span className="text-brand"> واعرف بيئته المناسبة</span>
+                <span className="text-brand dark:text-emerald-300">
+                  {' '}
+                  واعرف بيئته المناسبة
+                </span>
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted dark:text-stone-300 sm:text-base">
                 ارفع صورة أو التقطها بالكاميرا للحصول على الاسم العربي والعلمي،
                 نوع التربة، ومتطلبات العناية — بواجهة عربية كاملة.
               </p>
@@ -57,20 +59,19 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* Curated plants */}
       <section className="container-app py-8 sm:py-10 lg:py-12">
         <div className="mb-5 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-ink sm:text-xl">
+            <h2 className="text-lg font-bold text-ink dark:text-stone-100 sm:text-xl">
               نباتات شائعة
             </h2>
-            <p className="mt-1 text-sm text-muted">
+            <p className="mt-1 text-sm text-muted dark:text-stone-300">
               مجموعة مختارة للبدء السريع في الاستكشاف
             </p>
           </div>
           <Link
             to="/directory"
-            className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand hover:text-brand-dark"
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand dark:text-emerald-300 hover:text-brand-dark dark:hover:text-emerald-200"
           >
             الدليل كاملاً
             <ArrowLeft className="size-4" aria-hidden />
@@ -84,25 +85,30 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* Quiet capability strip — not feature cards */}
-      <section className="border-t border-line bg-surface">
+      <section className="border-t border-white/20 dark:border-stone-700/40 glass-panel">
         <div className="container-app py-8 sm:py-10">
           <div className="grid gap-6 sm:grid-cols-3">
             <div className="border-s-2 border-brand ps-4">
-              <h3 className="text-sm font-bold text-ink">تعريف بالصورة</h3>
-              <p className="mt-1 text-sm text-muted leading-relaxed">
+              <h3 className="text-sm font-bold text-ink dark:text-stone-100">
+                تعريف بالصورة
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted dark:text-stone-300">
                 كاميرا أو رفع ملف، مع معالجة واضحة لحالات التحميل والخطأ.
               </p>
             </div>
             <div className="border-s-2 border-sage ps-4">
-              <h3 className="text-sm font-bold text-ink">بحث وتصفية</h3>
-              <p className="mt-1 text-sm text-muted leading-relaxed">
+              <h3 className="text-sm font-bold text-ink dark:text-stone-100">
+                بحث وتصفية
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted dark:text-stone-300">
                 ابحث بالعربية أو بالاسم العلمي، وفلتر حسب التربة والبيئة.
               </p>
             </div>
             <div className="border-s-2 border-soil-brown ps-4">
-              <h3 className="text-sm font-bold text-ink">دليل عناية</h3>
-              <p className="mt-1 text-sm text-muted leading-relaxed">
+              <h3 className="text-sm font-bold text-ink dark:text-stone-100">
+                دليل عناية
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted dark:text-stone-300">
                 ري، ضوء، حرارة، وتحذيرات مهمة لكل نبات في قاعدة البيانات.
               </p>
             </div>

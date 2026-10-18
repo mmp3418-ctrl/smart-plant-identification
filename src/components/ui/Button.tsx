@@ -20,17 +20,17 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-brand text-white hover:bg-brand-dark hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand shadow-sm',
+    'bg-brand text-white hover:bg-brand-dark dark:hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand shadow-sm',
   secondary:
-    'bg-sage text-brand-dark dark:text-ink hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
+    'bg-sage text-brand-dark dark:bg-emerald-900 dark:text-emerald-100 hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
   outline:
-    'border border-brand bg-transparent text-brand hover:bg-brand-soft hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
+    'border border-brand bg-transparent text-brand dark:text-emerald-300 dark:border-emerald-400/70 hover:bg-brand-soft hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
   ghost:
-    'bg-transparent text-ink hover:bg-brand-soft/60 focus-visible:ring-brand',
+    'bg-transparent text-ink dark:text-stone-100 hover:bg-brand-soft/60 focus-visible:ring-brand',
   danger:
     'bg-danger text-white hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-danger shadow-sm',
   soil:
-    'bg-soil text-soil-brown hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-soil-brown',
+    'bg-soil text-soil-brown dark:text-[#e7c6a5] hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-soil-brown',
 }
 
 const sizeStyles: Record<ButtonSize, string> = {

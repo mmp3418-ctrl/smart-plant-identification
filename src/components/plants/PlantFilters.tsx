@@ -43,7 +43,7 @@ function FilterChip({
         'min-h-10 rounded-md border px-3 text-sm transition-colors',
         active
           ? 'border-brand bg-brand text-white'
-          : 'border-line bg-surface text-ink hover:border-brand/40',
+          : 'border-white/30 dark:border-stone-700/55 bg-white/70 dark:bg-stone-900/75 backdrop-blur-md text-ink dark:text-stone-100 hover:border-brand/40 shadow-md',
       )}
     >
       {children}
@@ -65,7 +65,9 @@ export function PlantFiltersPanel({
   return (
     <aside className={cn('space-y-6', className)}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-ink">تصفية النتائج</h2>
+        <h2 className="text-sm font-bold text-ink dark:text-stone-100">
+          تصفية النتائج
+        </h2>
         {hasActive ? (
           <button
             type="button"
@@ -78,7 +80,7 @@ export function PlantFiltersPanel({
                 difficulty: null,
               })
             }
-            className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted hover:text-brand"
+            className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted dark:text-stone-300 hover:text-brand dark:hover:text-emerald-300"
           >
             <X className="size-3.5" aria-hidden />
             مسح الفلاتر
@@ -87,7 +89,7 @@ export function PlantFiltersPanel({
       </div>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted dark:text-stone-400">
           نوع التربة
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -109,7 +111,7 @@ export function PlantFiltersPanel({
       </section>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted dark:text-stone-400">
           البيئة
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -134,7 +136,7 @@ export function PlantFiltersPanel({
       </section>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted dark:text-stone-400">
           أشعة الشمس
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -159,7 +161,7 @@ export function PlantFiltersPanel({
       </section>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted dark:text-stone-400">
           مستوى العناية
         </h3>
         <div className="flex flex-wrap gap-2">

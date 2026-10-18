@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { LeafSpinner } from '@/components/system/LeafSpinner'
+import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
 import { cn } from '@/lib/cn'
 
-const DISPLAY_MS = 420
+const DISPLAY_MS = 700
+const FADE_MS = 450
 
 /**
- * Brief botanical loading indicator on route changes.
- * Works with HashRouter (no data-router navigation states required).
+ * Full-screen green botanical loader on route changes.
  */
 export function RouteLoadingOverlay() {
   const location = useLocation()
   const [visible, setVisible] = useState(false)
+  const [exiting, setExiting] = useState(false)
   const [isFirst, setIsFirst] = useState(true)
 
   useEffect(() => {
@@ -20,23 +21,31 @@ export function RouteLoadingOverlay() {
       return
     }
 
+    setExiting(false)
     setVisible(true)
-    const timer = window.setTimeout(() => setVisible(false), DISPLAY_MS)
-    return () => window.clearTimeout(timer)
+
+    const exitTimer = window.setTimeout(() => setExiting(true), DISPLAY_MS)
+    const hideTimer = window.setTimeout(() => {
+      setVisible(false)
+      setExiting(false)
+    }, DISPLAY_MS + FADE_MS)
+
+    return () => {
+      window.clearTimeout(exitTimer)
+      window.clearTimeout(hideTimer)
+    }
   }, [location.pathname, location.search, isFirst])
 
+  if (!visible) return null
+
   return (
-    <div
-      className={cn(
-        'pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center pt-20 transition-opacity duration-200',
-        visible ? 'opacity-100' : 'opacity-0',
-      )}
-      aria-hidden={!visible}
-    >
-      <div className="glass-strong flex items-center gap-2 rounded-full border border-line/60 px-4 py-2 shadow-sm">
-        <LeafSpinner size="sm" label="جارٍ تحميل الصفحة" />
-        <span className="text-xs font-medium text-muted">جارٍ التحميل…</span>
-      </div>
+    <div className={cn(exiting && 'pointer-events-none')}>
+      <GreenLoadingOverlay
+        exiting={exiting}
+        message="جارٍ تحميل الصفحة…"
+        blocking={!exiting}
+        zIndexClass="z-[90]"
+      />
     </div>
   )
 }

@@ -62,12 +62,12 @@ export function Header() {
     cn(
       'inline-flex min-h-11 items-center px-3 text-sm font-medium transition-all duration-200 rounded-xl',
       isActive
-        ? 'bg-brand-soft text-brand'
-        : 'text-muted hover:text-ink hover:bg-brand-soft/50',
+        ? 'bg-brand-soft text-brand dark:text-emerald-300'
+        : 'text-muted dark:text-stone-300 hover:text-ink dark:hover:text-stone-100 hover:bg-brand-soft/50',
     )
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line/60 glass-panel">
+    <header className="sticky top-0 z-50 glass-panel">
       <div className="container-app flex h-14 items-center justify-between gap-3 sm:h-16">
         <Link
           to="/"
@@ -78,8 +78,10 @@ export function Header() {
             <Leaf className="size-4" strokeWidth={2.25} aria-hidden />
           </span>
           <span className="hidden sm:flex flex-col leading-none">
-            <span className="text-sm font-bold text-ink">نبْتة</span>
-            <span className="mt-0.5 text-[11px] text-muted">تعريف وملاءمة بيئية</span>
+            <span className="text-sm font-bold text-ink dark:text-stone-100">نبْتة</span>
+            <span className="mt-0.5 text-[11px] text-muted dark:text-stone-300">
+              تعريف وملاءمة بيئية
+            </span>
           </span>
         </Link>
 
@@ -112,19 +114,19 @@ export function Header() {
               <button
                 type="button"
                 onClick={() => setProfileOpen((open) => !open)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-ink transition-colors hover:bg-brand-soft/50"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/50"
                 aria-expanded={profileOpen}
                 aria-haspopup="menu"
               >
-                <span className="flex size-8 items-center justify-center rounded-xl bg-sage text-brand-dark dark:text-sage">
+                <span className="flex size-8 items-center justify-center rounded-xl bg-sage text-brand-dark dark:bg-emerald-900 dark:text-emerald-200">
                   <User className="size-4" aria-hidden />
                 </span>
-                <span className="max-w-[100px] truncate font-medium">
+                <span className="max-w-[100px] truncate font-medium text-ink dark:text-stone-100">
                   {user.name}
                 </span>
                 <ChevronDown
                   className={cn(
-                    'size-4 text-muted transition-transform duration-200',
+                    'size-4 text-muted dark:text-stone-300 transition-transform duration-200',
                     profileOpen && 'rotate-180',
                   )}
                   aria-hidden
@@ -134,19 +136,21 @@ export function Header() {
               {profileOpen ? (
                 <div
                   role="menu"
-                  className="absolute start-0 mt-1.5 w-56 rounded-2xl border border-line/70 glass-strong p-1.5 shadow-lg"
+                  className="absolute start-0 mt-1.5 w-56 rounded-2xl glass-strong p-1.5"
                 >
-                  <div className="mb-1 border-b border-line/70 px-3 py-2">
-                    <p className="truncate text-sm font-semibold text-ink">
+                  <div className="mb-1 border-b border-white/20 dark:border-stone-700/55 px-3 py-2">
+                    <p className="truncate text-sm font-semibold text-ink dark:text-stone-100">
                       {user.name}
                     </p>
-                    <p className="truncate text-xs text-muted">{user.email}</p>
+                    <p className="truncate text-xs text-muted dark:text-stone-300">
+                      {user.email}
+                    </p>
                   </div>
                   <Link
                     to="/favorites"
                     role="menuitem"
                     onClick={() => setProfileOpen(false)}
-                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
+                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/60"
                   >
                     <Heart className="size-4" aria-hidden />
                     المفضلة
@@ -155,7 +159,7 @@ export function Header() {
                     to="/history"
                     role="menuitem"
                     onClick={() => setProfileOpen(false)}
-                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
+                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/60"
                   >
                     <History className="size-4" aria-hidden />
                     سجل التعريف
@@ -165,7 +169,7 @@ export function Header() {
                       to="/admin"
                       role="menuitem"
                       onClick={() => setProfileOpen(false)}
-                      className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
+                      className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/60"
                     >
                       <LayoutDashboard className="size-4" aria-hidden />
                       لوحة الإدارة
@@ -204,7 +208,7 @@ export function Header() {
           <ThemeToggle />
           <button
             type="button"
-            className="touch-target inline-flex items-center justify-center rounded-xl text-ink transition-colors hover:bg-brand-soft/50"
+            className="touch-target inline-flex items-center justify-center rounded-xl text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/50"
             onClick={() => setMobileOpen((open) => !open)}
             aria-expanded={mobileOpen}
             aria-controls="mobile-drawer"
@@ -236,13 +240,13 @@ export function Header() {
           id="mobile-drawer"
           className={cn(
             'absolute top-14 inset-x-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto',
-            'border-b border-line/60 glass-strong shadow-xl',
+            'glass-strong',
             'transition-transform duration-200 ease-out',
             mobileOpen ? 'translate-y-0' : '-translate-y-3',
           )}
         >
           {/* Search — separated from auth actions */}
-          <div className="border-b border-line/60 px-4 pb-4 pt-3">
+          <div className="border-b border-white/20 dark:border-stone-700/55 px-4 pb-4 pt-3">
             <PlantSearchField
               placeholder="ابحث عن نبات…"
               navigateOnSubmit
@@ -260,8 +264,8 @@ export function Header() {
                   cn(
                     'min-h-11 rounded-xl px-4 py-3 text-base font-medium transition-colors',
                     isActive
-                      ? 'bg-brand-soft text-brand'
-                      : 'text-ink hover:bg-brand-soft/50',
+                      ? 'bg-brand-soft text-brand dark:text-emerald-300'
+                      : 'text-ink dark:text-stone-100 hover:bg-brand-soft/50',
                   )
                 }
               >
@@ -271,29 +275,31 @@ export function Header() {
             <Link
               to="/favorites"
               onClick={() => setMobileOpen(false)}
-              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink transition-colors hover:bg-brand-soft/50"
+              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/50"
             >
               المفضلة
             </Link>
             <Link
               to="/history"
               onClick={() => setMobileOpen(false)}
-              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink transition-colors hover:bg-brand-soft/50"
+              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink dark:text-stone-100 transition-colors hover:bg-brand-soft/50"
             >
               سجل التعريف
             </Link>
           </nav>
 
-          <div className="border-t border-line/60 p-4">
+          <div className="border-t border-white/20 dark:border-stone-700/55 p-4">
             <div className="mb-4">
-              <ThemeToggle showLabel className="w-full justify-start glass-panel" />
+              <ThemeToggle showLabel className="w-full justify-start" />
             </div>
 
             {user ? (
               <div className="flex flex-col gap-3">
-                <div className="rounded-xl bg-canvas/80 px-4 py-3">
-                  <p className="text-sm font-semibold text-ink">{user.name}</p>
-                  <p className="text-xs text-muted">{user.email}</p>
+                <div className="rounded-xl glass-panel px-4 py-3">
+                  <p className="text-sm font-semibold text-ink dark:text-stone-100">
+                    {user.name}
+                  </p>
+                  <p className="text-xs text-muted dark:text-stone-300">{user.email}</p>
                 </div>
                 {user.role === 'admin' ? (
                   <Link to="/admin" onClick={() => setMobileOpen(false)}>

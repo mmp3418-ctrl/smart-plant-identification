@@ -19,14 +19,14 @@
     <script>
       (function () {
         try {
+          /* Default is always light; dark only when user explicitly chose it */
           var stored = localStorage.getItem('spi.theme');
-          var prefersDark =
-            window.matchMedia &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var dark = stored === 'dark' || (!stored && prefersDark);
-          if (dark) {
+          if (stored === 'dark') {
             document.documentElement.classList.add('dark');
             document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
           }
         } catch (e) {}
       })();

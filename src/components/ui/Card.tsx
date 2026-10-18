@@ -17,7 +17,7 @@ const paddingStyles = {
 export function Card({
   className,
   padding = 'md',
-  glass = false,
+  glass = true,
   hoverable = false,
   children,
   ...props
@@ -25,8 +25,10 @@ export function Card({
   return (
     <div
       className={cn(
-        'rounded-2xl border border-line/80',
-        glass ? 'glass-panel' : 'bg-surface',
+        'rounded-2xl',
+        glass
+          ? 'glass-panel'
+          : 'border border-line bg-surface dark:border-stone-700/55 dark:bg-[#1A382A]',
         hoverable && 'hover-lift cursor-pointer',
         paddingStyles[padding],
         className,
@@ -57,9 +59,13 @@ export function CardHeader({
       {...props}
     >
       <div className="min-w-0">
-        <h3 className="text-base font-bold text-ink sm:text-lg">{title}</h3>
+        <h3 className="text-base font-bold text-ink dark:text-stone-100 sm:text-lg">
+          {title}
+        </h3>
         {description ? (
-          <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted dark:text-stone-300">
+            {description}
+          </p>
         ) : null}
       </div>
       {action}
@@ -73,7 +79,13 @@ export function CardContent({
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('text-sm leading-relaxed text-muted', className)} {...props}>
+    <div
+      className={cn(
+        'text-sm leading-relaxed text-muted dark:text-stone-300',
+        className,
+      )}
+      {...props}
+    >
       {children}
     </div>
   )

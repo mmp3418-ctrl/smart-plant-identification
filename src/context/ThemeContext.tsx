@@ -21,18 +21,14 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
+/** First visit always starts in light mode — never follow system preference. */
 function readStoredTheme(): ThemeMode {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored === 'light' || stored === 'dark') return stored
+    if (stored === 'dark') return 'dark'
+    if (stored === 'light') return 'light'
   } catch {
     /* ignore */
-  }
-  if (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-  ) {
-    return 'dark'
   }
   return 'light'
 }

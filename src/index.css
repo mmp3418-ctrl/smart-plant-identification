@@ -21,29 +21,25 @@
   --color-danger-soft: #fef3f2;
   --color-warning: #b54708;
   --color-warning-soft: #fffaeb;
-  --color-glass: color-mix(in srgb, #ffffff 70%, transparent);
-  --color-glass-strong: color-mix(in srgb, #ffffff 82%, transparent);
 }
 
-/* Dark botanical palette — overrides semantic tokens */
+/* Dark botanical palette — high-contrast text tokens */
 .dark {
-  --color-brand: #3d8f5c;
+  --color-brand: #4ade80;
   --color-brand-dark: #142d21;
-  --color-sage: #2f4f3d;
+  --color-sage: #c5dcc4;
   --color-canvas: #0f1f17;
   --color-surface: #1a382a;
   --color-soil: #3a2e24;
-  --color-soil-brown: #d4b59a;
-  --color-ink: #e8ede9;
-  --color-muted: #9aa89e;
-  --color-line: #2a4a3a;
-  --color-brand-soft: color-mix(in srgb, #3d8f5c 22%, #0f1f17);
-  --color-danger: #f97066;
-  --color-danger-soft: color-mix(in srgb, #b42318 28%, #0f1f17);
-  --color-warning: #fdb022;
-  --color-warning-soft: color-mix(in srgb, #b54708 28%, #0f1f17);
-  --color-glass: color-mix(in srgb, #0f1f17 80%, transparent);
-  --color-glass-strong: color-mix(in srgb, #1a382a 88%, transparent);
+  --color-soil-brown: #e7c6a5;
+  --color-ink: #f5f5f4; /* stone-100 */
+  --color-muted: #d6d3d1; /* stone-300 */
+  --color-line: #3f5a4a;
+  --color-brand-soft: color-mix(in srgb, #4ade80 18%, #0f1f17);
+  --color-danger: #fca5a5;
+  --color-danger-soft: color-mix(in srgb, #b42318 32%, #0f1f17);
+  --color-warning: #fcd34d;
+  --color-warning-soft: color-mix(in srgb, #b54708 30%, #0f1f17);
 }
 
 @layer base {
@@ -69,6 +65,10 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.35s ease, color 0.35s ease;
+  }
+
+  .dark body {
+    color: #f5f5f4;
   }
 
   #root {
@@ -131,16 +131,33 @@
     text-wrap: balance;
   }
 
+  /* Explicit dark-mode text contrast (never blends into canvas) */
+  .dark .text-ink {
+    color: #f5f5f4 !important;
+  }
+
+  .dark .text-muted {
+    color: #d6d3d1 !important;
+  }
+
+  .dark .placeholder\:text-muted\/80::placeholder {
+    color: rgb(214 211 209 / 0.8) !important;
+  }
+
+  .dark .hover\:text-ink:hover {
+    color: #f5f5f4 !important;
+  }
+
+  .dark .hover\:text-brand-dark:hover {
+    color: #86efac !important;
+  }
+
   .glass-panel {
-    background: var(--color-glass);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    @apply backdrop-blur-md bg-white/70 dark:bg-stone-900/75 border border-white/30 dark:border-stone-700/55 shadow-lg;
   }
 
   .glass-strong {
-    background: var(--color-glass-strong);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    @apply backdrop-blur-lg bg-white/80 dark:bg-stone-900/85 border border-white/40 dark:border-stone-600/50 shadow-xl;
   }
 
   .hover-lift {
@@ -206,7 +223,6 @@
     }
   }
 
-  /* Splash / leaf animations */
   .leaf-draw {
     stroke-dasharray: 120;
     stroke-dashoffset: 120;
@@ -230,8 +246,24 @@
       filter: drop-shadow(0 0 0 transparent);
     }
     50% {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 22px color-mix(in srgb, #c5dcc4 65%, transparent));
+    }
+  }
+
+  .leaf-grow {
+    animation: leaf-grow 2s ease-in-out infinite;
+  }
+
+  @keyframes leaf-grow {
+    0%,
+    100% {
+      transform: scale(0.92);
+      opacity: 0.85;
+    }
+    50% {
       transform: scale(1.08);
-      filter: drop-shadow(0 0 16px color-mix(in srgb, #c5dcc4 55%, transparent));
+      opacity: 1;
     }
   }
 
@@ -268,7 +300,7 @@
   }
 
   .splash-fade-out {
-    animation: splash-fade-out 0.7s ease forwards;
+    animation: splash-fade-out 0.65s ease forwards;
   }
 
   @keyframes splash-fade-out {
@@ -276,6 +308,19 @@
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
+    }
+  }
+
+  .loader-fade-in {
+    animation: loader-fade-in 0.25s ease-out;
+  }
+
+  @keyframes loader-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 }

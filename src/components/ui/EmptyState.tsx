@@ -23,10 +23,12 @@ export function EmptyState({
         className,
       )}
     >
-      {icon ? <div className="mb-3 text-muted">{icon}</div> : null}
-      <h3 className="text-base font-bold text-ink">{title}</h3>
+      {icon ? (
+        <div className="mb-3 text-muted dark:text-stone-300">{icon}</div>
+      ) : null}
+      <h3 className="text-base font-bold text-ink dark:text-stone-100">{title}</h3>
       {description ? (
-        <p className="mt-1.5 max-w-sm text-sm text-muted leading-relaxed">
+        <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted dark:text-stone-300">
           {description}
         </p>
       ) : null}
