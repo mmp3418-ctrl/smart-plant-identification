@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://ziyad.github.io/smart-plant-identification/",
+  "homepage": "https://mmp3418-ctrl.github.io/smart-plant-identification/",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
