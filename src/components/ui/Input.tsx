@@ -23,8 +23,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         ) : null}
         <span
           className={cn(
-            'flex min-h-11 items-center gap-2 rounded-md border bg-surface px-3 transition-colors',
-            error ? 'border-danger' : 'border-line focus-within:border-brand',
+            'flex min-h-11 items-center gap-2 rounded-xl border bg-surface/90 px-3 transition-all duration-200',
+            'backdrop-blur-sm shadow-sm',
+            error
+              ? 'border-danger'
+              : 'border-line/80 focus-within:border-brand focus-within:shadow-md',
           )}
         >
           {leftAddon ? (

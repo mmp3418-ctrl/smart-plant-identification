@@ -17,7 +17,7 @@ export function PlantCard({ plant, className }: PlantCardProps) {
   return (
     <article
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-lg border border-line bg-surface',
+        'group relative flex flex-col overflow-hidden rounded-2xl border border-line/80 bg-surface hover-lift',
         className,
       )}
     >
@@ -37,9 +37,9 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         aria-pressed={favorite}
         className={cn(
           'absolute top-2 start-2 touch-target inline-flex items-center justify-center',
-          'rounded-md border border-line/80 bg-surface/95 text-muted',
-          'transition-colors hover:text-brand',
-          favorite && 'text-brand border-brand/30 bg-surface',
+          'rounded-xl border border-line/70 glass-strong text-muted',
+          'transition-all duration-200 hover:text-brand hover:scale-105',
+          favorite && 'text-brand border-brand/30',
         )}
       >
         <Heart

@@ -20,23 +20,23 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-brand text-white hover:bg-brand-dark focus-visible:ring-brand',
+    'bg-brand text-white hover:bg-brand-dark hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand shadow-sm',
   secondary:
-    'bg-sage text-brand-dark hover:bg-[color-mix(in_srgb,#C5DCC4_80%,#286B45)] focus-visible:ring-brand',
+    'bg-sage text-brand-dark dark:text-ink hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
   outline:
-    'border border-brand bg-transparent text-brand hover:bg-brand-soft focus-visible:ring-brand',
+    'border border-brand bg-transparent text-brand hover:bg-brand-soft hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-brand',
   ghost:
-    'bg-transparent text-ink hover:bg-[color-mix(in_srgb,#EDF1E8_70%,#D5DDD2)] focus-visible:ring-brand',
+    'bg-transparent text-ink hover:bg-brand-soft/60 focus-visible:ring-brand',
   danger:
-    'bg-danger text-white hover:bg-[#912018] focus-visible:ring-danger',
+    'bg-danger text-white hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-danger shadow-sm',
   soil:
-    'bg-soil text-soil-brown hover:bg-[color-mix(in_srgb,#F4E4D7_85%,#79533D)] focus-visible:ring-soil-brown',
+    'bg-soil text-soil-brown hover:brightness-95 hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-soil-brown',
 }
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: 'min-h-11 px-3.5 text-sm gap-1.5 rounded-md',
-  md: 'min-h-11 px-4 text-sm gap-2 rounded-md',
-  lg: 'min-h-12 px-5 text-base gap-2 rounded-md',
+  sm: 'min-h-11 px-3.5 text-sm gap-1.5 rounded-xl',
+  md: 'min-h-11 px-4 text-sm gap-2 rounded-xl',
+  lg: 'min-h-12 px-5 text-base gap-2 rounded-xl',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -64,9 +64,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         disabled={isDisabled}
         className={cn(
-          'inline-flex items-center justify-center font-semibold transition-colors duration-150',
+          'inline-flex items-center justify-center font-semibold transition-all duration-200',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
-          'disabled:pointer-events-none disabled:opacity-45',
+          'disabled:pointer-events-none disabled:opacity-45 disabled:hover:scale-100',
           variantStyles[variant],
           sizeStyles[size],
           fullWidth && 'w-full',

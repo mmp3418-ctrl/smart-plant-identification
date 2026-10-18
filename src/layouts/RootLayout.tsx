@@ -1,17 +1,21 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { RouteLoadingOverlay } from '@/components/system/RouteLoadingOverlay'
 import { cn } from '@/lib/cn'
 
 export function RootLayout() {
-  const { pathname } = useLocation()
-  const isIdentify = pathname.startsWith('/identify')
+  const location = useLocation()
+  const isIdentify = location.pathname.startsWith('/identify')
 
   return (
     <div className="flex min-h-dvh flex-col">
       {!isIdentify ? <Header /> : null}
+      <RouteLoadingOverlay />
       <main className={cn('flex-1', isIdentify && 'bg-brand-dark')}>
-        <Outlet />
+        <div key={location.pathname} className="page-enter">
+          <Outlet />
+        </div>
       </main>
       {!isIdentify ? <Footer /> : null}
     </div>

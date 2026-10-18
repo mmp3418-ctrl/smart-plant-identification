@@ -16,6 +16,21 @@
       rel="stylesheet"
     />
     <title>نبْتة | تعريف النباتات والملاءمة البيئية</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('spi.theme');
+          var prefersDark =
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var dark = stored === 'dark' || (!stored && prefersDark);
+          if (dark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

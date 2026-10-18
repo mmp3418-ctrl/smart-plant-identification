@@ -12,12 +12,12 @@ export function Footer() {
   const year = new Date().getFullYear()
 
   return (
-    <footer className="mt-auto border-t border-line bg-surface">
+    <footer className="mt-auto border-t border-line/60 glass-panel">
       <div className="container-app py-10 sm:py-12">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr]">
           <div>
             <div className="mb-3 flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-md bg-brand text-white">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-brand text-white">
                 <Leaf className="size-4" aria-hidden />
               </span>
               <span className="font-bold text-ink">نبْتة</span>
@@ -35,7 +35,7 @@ export function Footer() {
                 <li key={link.to}>
                   <Link
                     to={link.to}
-                    className="text-sm text-muted transition-colors hover:text-brand"
+                    className="text-sm text-muted transition-colors duration-200 hover:text-brand"
                   >
                     {link.label}
                   </Link>
@@ -53,7 +53,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-1 border-t border-line pt-5 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-8 flex flex-col gap-1 border-t border-line/60 pt-5 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
           <p>
             © {year} نبْتة — نظام التعريف الذكي بالنباتات وتقييم الملاءمة البيئية.
             مشروع تخرج جامعي.

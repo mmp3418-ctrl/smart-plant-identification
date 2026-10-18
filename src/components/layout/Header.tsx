@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   Leaf,
   Menu,
@@ -11,8 +11,12 @@ import {
   History,
   LayoutDashboard,
   Camera,
+  LogIn,
+  UserPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { PlantSearchField } from '@/components/plants/PlantSearchField'
+import { ThemeToggle } from '@/components/system/ThemeToggle'
 import { useAuth } from '@/context/AuthContext'
 import { cn } from '@/lib/cn'
 
@@ -24,9 +28,15 @@ const navLinks = [
 
 export function Header() {
   const { user, logout } = useAuth()
+  const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setMobileOpen(false)
+    setProfileOpen(false)
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -50,30 +60,33 @@ export function Header() {
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
-      'inline-flex min-h-11 items-center px-3 text-sm font-medium transition-colors rounded-md',
+      'inline-flex min-h-11 items-center px-3 text-sm font-medium transition-all duration-200 rounded-xl',
       isActive
         ? 'bg-brand-soft text-brand'
-        : 'text-muted hover:text-ink hover:bg-[color-mix(in_srgb,#EDF1E8_80%,#D5DDD2)]',
+        : 'text-muted hover:text-ink hover:bg-brand-soft/50',
     )
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-surface/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-50 border-b border-line/60 glass-panel">
       <div className="container-app flex h-14 items-center justify-between gap-3 sm:h-16">
         <Link
           to="/"
-          className="flex min-h-11 items-center gap-2.5 shrink-0"
+          className="flex min-h-11 items-center gap-2.5 shrink-0 transition-transform duration-200 hover:scale-[1.02]"
           onClick={() => setMobileOpen(false)}
         >
-          <span className="flex size-9 items-center justify-center rounded-md bg-brand text-white">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-white shadow-sm">
             <Leaf className="size-4" strokeWidth={2.25} aria-hidden />
           </span>
           <span className="hidden sm:flex flex-col leading-none">
             <span className="text-sm font-bold text-ink">نبْتة</span>
-            <span className="text-[11px] text-muted mt-0.5">تعريف وملاءمة بيئية</span>
+            <span className="mt-0.5 text-[11px] text-muted">تعريف وملاءمة بيئية</span>
           </span>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-0.5" aria-label="التنقل الرئيسي">
+        <nav
+          className="hidden md:flex items-center gap-0.5"
+          aria-label="التنقل الرئيسي"
+        >
           {navLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -87,6 +100,7 @@ export function Header() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
+          <ThemeToggle />
           <Link to="/identify">
             <Button size="sm" leftIcon={<Camera className="size-4" />}>
               التقط صورة
@@ -98,17 +112,19 @@ export function Header() {
               <button
                 type="button"
                 onClick={() => setProfileOpen((open) => !open)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-sm text-ink hover:bg-canvas"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-ink transition-colors hover:bg-brand-soft/50"
                 aria-expanded={profileOpen}
                 aria-haspopup="menu"
               >
-                <span className="flex size-8 items-center justify-center rounded-md bg-sage text-brand-dark">
+                <span className="flex size-8 items-center justify-center rounded-xl bg-sage text-brand-dark dark:text-sage">
                   <User className="size-4" aria-hidden />
                 </span>
-                <span className="max-w-[100px] truncate font-medium">{user.name}</span>
+                <span className="max-w-[100px] truncate font-medium">
+                  {user.name}
+                </span>
                 <ChevronDown
                   className={cn(
-                    'size-4 text-muted transition-transform',
+                    'size-4 text-muted transition-transform duration-200',
                     profileOpen && 'rotate-180',
                   )}
                   aria-hidden
@@ -118,17 +134,19 @@ export function Header() {
               {profileOpen ? (
                 <div
                   role="menu"
-                  className="absolute start-0 mt-1.5 w-56 rounded-lg border border-line bg-surface p-1.5 shadow-sm"
+                  className="absolute start-0 mt-1.5 w-56 rounded-2xl border border-line/70 glass-strong p-1.5 shadow-lg"
                 >
-                  <div className="border-b border-line px-3 py-2 mb-1">
-                    <p className="text-sm font-semibold text-ink truncate">{user.name}</p>
-                    <p className="text-xs text-muted truncate">{user.email}</p>
+                  <div className="mb-1 border-b border-line/70 px-3 py-2">
+                    <p className="truncate text-sm font-semibold text-ink">
+                      {user.name}
+                    </p>
+                    <p className="truncate text-xs text-muted">{user.email}</p>
                   </div>
                   <Link
                     to="/favorites"
                     role="menuitem"
                     onClick={() => setProfileOpen(false)}
-                    className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-ink hover:bg-canvas"
+                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
                   >
                     <Heart className="size-4" aria-hidden />
                     المفضلة
@@ -137,7 +155,7 @@ export function Header() {
                     to="/history"
                     role="menuitem"
                     onClick={() => setProfileOpen(false)}
-                    className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-ink hover:bg-canvas"
+                    className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
                   >
                     <History className="size-4" aria-hidden />
                     سجل التعريف
@@ -147,7 +165,7 @@ export function Header() {
                       to="/admin"
                       role="menuitem"
                       onClick={() => setProfileOpen(false)}
-                      className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-ink hover:bg-canvas"
+                      className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-ink transition-colors hover:bg-brand-soft/60"
                     >
                       <LayoutDashboard className="size-4" aria-hidden />
                       لوحة الإدارة
@@ -160,7 +178,7 @@ export function Header() {
                       setProfileOpen(false)
                       void logout()
                     }}
-                    className="flex w-full min-h-10 items-center gap-2 rounded-md px-3 text-sm text-danger hover:bg-danger-soft"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-danger transition-colors hover:bg-danger-soft"
                   >
                     <LogOut className="size-4" aria-hidden />
                     تسجيل الخروج
@@ -170,55 +188,68 @@ export function Header() {
             </div>
           ) : (
             <>
-              <Link
-                to="/login"
-                className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-muted hover:text-ink"
-              >
-                دخول
+              <Link to="/login">
+                <Button variant="outline" size="sm">
+                  دخول
+                </Button>
               </Link>
               <Link to="/register">
-                <Button variant="outline" size="sm">
-                  حساب جديد
-                </Button>
+                <Button size="sm">حساب جديد</Button>
               </Link>
             </>
           )}
         </div>
 
-        <button
-          type="button"
-          className="md:hidden touch-target inline-flex items-center justify-center rounded-md text-ink hover:bg-canvas"
-          onClick={() => setMobileOpen((open) => !open)}
-          aria-expanded={mobileOpen}
-          aria-controls="mobile-drawer"
-          aria-label={mobileOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
-        >
-          {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
+        <div className="flex items-center gap-1.5 md:hidden">
+          <ThemeToggle />
+          <button
+            type="button"
+            className="touch-target inline-flex items-center justify-center rounded-xl text-ink transition-colors hover:bg-brand-soft/50"
+            onClick={() => setMobileOpen((open) => !open)}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-drawer"
+            aria-label={mobileOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
+          >
+            {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+        </div>
       </div>
 
+      {/* Mobile drawer */}
       <div
         className={cn(
           'fixed inset-0 z-40 md:hidden transition-opacity duration-200',
-          mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          mobileOpen
+            ? 'opacity-100 pointer-events-auto'
+            : 'opacity-0 pointer-events-none',
         )}
         aria-hidden={!mobileOpen}
       >
         <button
           type="button"
-          className="absolute inset-0 bg-brand-dark/40"
+          className="absolute inset-0 bg-brand-dark/45 backdrop-blur-[2px]"
           onClick={() => setMobileOpen(false)}
           aria-label="إغلاق القائمة"
         />
+
         <aside
           id="mobile-drawer"
           className={cn(
-            'absolute top-14 inset-x-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-b border-line bg-surface',
-            'transition-transform duration-200',
-            mobileOpen ? 'translate-y-0' : '-translate-y-2',
+            'absolute top-14 inset-x-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto',
+            'border-b border-line/60 glass-strong shadow-xl',
+            'transition-transform duration-200 ease-out',
+            mobileOpen ? 'translate-y-0' : '-translate-y-3',
           )}
         >
-          <nav className="flex flex-col gap-0.5 p-3" aria-label="تنقل الجوال">
+          {/* Search — separated from auth actions */}
+          <div className="border-b border-line/60 px-4 pb-4 pt-3">
+            <PlantSearchField
+              placeholder="ابحث عن نبات…"
+              navigateOnSubmit
+            />
+          </div>
+
+          <nav className="flex flex-col gap-1 p-3" aria-label="تنقل الجوال">
             {navLinks.map((link) => (
               <NavLink
                 key={link.to}
@@ -227,8 +258,10 @@ export function Header() {
                 onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-md px-4 py-3 text-base font-medium',
-                    isActive ? 'bg-brand-soft text-brand' : 'text-ink hover:bg-canvas',
+                    'min-h-11 rounded-xl px-4 py-3 text-base font-medium transition-colors',
+                    isActive
+                      ? 'bg-brand-soft text-brand'
+                      : 'text-ink hover:bg-brand-soft/50',
                   )
                 }
               >
@@ -238,23 +271,27 @@ export function Header() {
             <Link
               to="/favorites"
               onClick={() => setMobileOpen(false)}
-              className="rounded-md px-4 py-3 text-base font-medium text-ink hover:bg-canvas"
+              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink transition-colors hover:bg-brand-soft/50"
             >
               المفضلة
             </Link>
             <Link
               to="/history"
               onClick={() => setMobileOpen(false)}
-              className="rounded-md px-4 py-3 text-base font-medium text-ink hover:bg-canvas"
+              className="min-h-11 rounded-xl px-4 py-3 text-base font-medium text-ink transition-colors hover:bg-brand-soft/50"
             >
               سجل التعريف
             </Link>
           </nav>
 
-          <div className="space-y-2 border-t border-line p-3">
+          <div className="border-t border-line/60 p-4">
+            <div className="mb-4">
+              <ThemeToggle showLabel className="w-full justify-start glass-panel" />
+            </div>
+
             {user ? (
-              <>
-                <div className="rounded-md bg-canvas px-4 py-3">
+              <div className="flex flex-col gap-3">
+                <div className="rounded-xl bg-canvas/80 px-4 py-3">
                   <p className="text-sm font-semibold text-ink">{user.name}</p>
                   <p className="text-xs text-muted">{user.email}</p>
                 </div>
@@ -268,7 +305,7 @@ export function Header() {
                 <Button
                   variant="ghost"
                   fullWidth
-                  className="text-danger hover:bg-danger-soft"
+                  className="min-h-11 text-danger hover:bg-danger-soft"
                   onClick={() => {
                     setMobileOpen(false)
                     void logout()
@@ -276,18 +313,37 @@ export function Header() {
                 >
                   تسجيل الخروج
                 </Button>
-              </>
+              </div>
             ) : (
-              <>
-                <Link to="/login" onClick={() => setMobileOpen(false)}>
-                  <Button variant="outline" fullWidth>
+              <div className="flex flex-col gap-4">
+                <Link
+                  to="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    fullWidth
+                    className="min-h-12 rounded-xl"
+                    leftIcon={<LogIn className="size-4" />}
+                  >
                     تسجيل الدخول
                   </Button>
                 </Link>
-                <Link to="/register" onClick={() => setMobileOpen(false)}>
-                  <Button fullWidth>إنشاء حساب</Button>
+                <Link
+                  to="/register"
+                  onClick={() => setMobileOpen(false)}
+                  className="block"
+                >
+                  <Button
+                    fullWidth
+                    className="min-h-12 rounded-xl"
+                    leftIcon={<UserPlus className="size-4" />}
+                  >
+                    إنشاء حساب
+                  </Button>
                 </Link>
-              </>
+              </div>
             )}
           </div>
         </aside>

@@ -3,6 +3,8 @@ import { cn } from '@/lib/cn'
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  glass?: boolean
+  hoverable?: boolean
 }
 
 const paddingStyles = {
@@ -15,13 +17,17 @@ const paddingStyles = {
 export function Card({
   className,
   padding = 'md',
+  glass = false,
+  hoverable = false,
   children,
   ...props
 }: CardProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border border-line bg-surface',
+        'rounded-2xl border border-line/80',
+        glass ? 'glass-panel' : 'bg-surface',
+        hoverable && 'hover-lift cursor-pointer',
         paddingStyles[padding],
         className,
       )}
@@ -53,7 +59,7 @@ export function CardHeader({
       <div className="min-w-0">
         <h3 className="text-base font-bold text-ink sm:text-lg">{title}</h3>
         {description ? (
-          <p className="mt-1 text-sm text-muted leading-relaxed">{description}</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
         ) : null}
       </div>
       {action}
@@ -67,7 +73,7 @@ export function CardContent({
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('text-sm text-muted leading-relaxed', className)} {...props}>
+    <div className={cn('text-sm leading-relaxed text-muted', className)} {...props}>
       {children}
     </div>
   )
