@@ -22,13 +22,13 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ])
 
-function getPlantNetApiKey(): string | null {
+function getPlantNetApiKey(): string {
   return readPlantNetApiKey()
 }
 
-/** True when `VITE_PLANTNET_API_KEY` was inlined into the client bundle. */
+/** Always true when public fallback or env key is available (GH Pages safe). */
 export function isPlantNetConfigured(): boolean {
-  return getPlantNetApiKey() !== null
+  return getPlantNetApiKey().length > 0
 }
 
 /**
@@ -165,6 +165,7 @@ export async function identifyPlantWithPlantNet(
 ): Promise<PlantIdentificationOutcome> {
   const apiKey = getPlantNetApiKey()
   if (!apiKey) {
+    // Extremely unlikely with public fallback — keep Arabic safety message
     return {
       ok: false,
       code: 'MISSING_API_KEY',

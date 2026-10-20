@@ -6,20 +6,38 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
+/** Mirrors `src/config/publicRuntimeConfig.ts` for Node-side Vite defines. */
+const PUBLIC_FALLBACKS = {
+  VITE_PLANTNET_API_KEY: '2b10d9WpUNeMmsuwvO7MLBaUu',
+  VITE_SUPABASE_URL: 'https://xfyhmzlzpztitaecdoqj.supabase.co',
+  VITE_SUPABASE_ANON_KEY: 'sb_publishable_1NbiZ3cxFkINQs0ZT4GcXQ_Uc3R3wzL',
+} as const
+
+function resolveViteEnv(
+  env: Record<string, string>,
+  name: keyof typeof PUBLIC_FALLBACKS,
+): string {
+  const fromFiles = (env[name] || process.env[name] || '').trim()
+  if (
+    fromFiles &&
+    !fromFiles.toLowerCase().includes('your-') &&
+    fromFiles !== 'undefined'
+  ) {
+    return fromFiles
+  }
+  return PUBLIC_FALLBACKS[name]
+}
+
 /**
- * Load VITE_* from `.env` / process.env (CI secrets) and ensure they are
- * available for client bundling on GitHub Pages production builds.
+ * Always inline VITE_* into the client bundle (env/secrets OR public fallbacks)
+ * so GitHub Pages works even when `.env` is not present in CI.
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, rootDir, 'VITE_')
 
-  const plantNetKey = (env.VITE_PLANTNET_API_KEY || process.env.VITE_PLANTNET_API_KEY || '').trim()
-  const supabaseUrl = (env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim()
-  const supabaseAnon = (
-    env.VITE_SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    ''
-  ).trim()
+  const plantNetKey = resolveViteEnv(env, 'VITE_PLANTNET_API_KEY')
+  const supabaseUrl = resolveViteEnv(env, 'VITE_SUPABASE_URL')
+  const supabaseAnon = resolveViteEnv(env, 'VITE_SUPABASE_ANON_KEY')
 
   return {
     base: '/smart-plant-identification/',
@@ -30,7 +48,6 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(rootDir, './src'),
       },
     },
-    // Explicit defines as a safety net so CI-injected secrets are always inlined
     define: {
       'import.meta.env.VITE_PLANTNET_API_KEY': JSON.stringify(plantNetKey),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),

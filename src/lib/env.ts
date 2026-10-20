@@ -1,13 +1,15 @@
 /**
  * Vite inlines `import.meta.env.VITE_*` at build time.
- * Access must use static property names (not dynamic keys) so values
- * are correctly embedded in the GitHub Pages production bundle.
+ * Access must use static property names so values embed in the GH Pages bundle.
+ *
+ * When env vars are missing (common on GitHub Pages), we fall back to
+ * `PUBLIC_RUNTIME_CONFIG` so identification keeps working.
  */
+import { PUBLIC_RUNTIME_CONFIG } from '@/config/publicRuntimeConfig'
 
 function normalizeEnvValue(value: unknown): string {
   if (typeof value !== 'string') return ''
   const trimmed = value.trim()
-  // Guard against accidentally stringified empties from CI
   if (
     trimmed === '' ||
     trimmed === 'undefined' ||
@@ -31,39 +33,46 @@ function isPlaceholder(value: string): boolean {
   )
 }
 
-/** Pl@ntNet API key — must remain a static `import.meta.env.VITE_PLANTNET_API_KEY` read. */
-export function readPlantNetApiKey(): string | null {
-  const key = normalizeEnvValue(import.meta.env.VITE_PLANTNET_API_KEY)
-  if (!key || isPlaceholder(key)) return null
-  return key
+function resolveKey(envValue: unknown, fallback: string): string {
+  const fromEnv = normalizeEnvValue(envValue)
+  if (fromEnv && !isPlaceholder(fromEnv)) return fromEnv
+  return fallback
 }
 
-export function readSupabaseUrl(): string | null {
-  const url = normalizeEnvValue(import.meta.env.VITE_SUPABASE_URL)
-  if (!url || isPlaceholder(url)) return null
-  return url
+/** Pl@ntNet API key — env first, then committed public fallback for GH Pages. */
+export function readPlantNetApiKey(): string {
+  return resolveKey(
+    import.meta.env.VITE_PLANTNET_API_KEY,
+    PUBLIC_RUNTIME_CONFIG.plantNetApiKey,
+  )
 }
 
-export function readSupabaseAnonKey(): string | null {
-  const key = normalizeEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
-  if (!key || isPlaceholder(key)) return null
-  return key
+export function readSupabaseUrl(): string {
+  return resolveKey(
+    import.meta.env.VITE_SUPABASE_URL,
+    PUBLIC_RUNTIME_CONFIG.supabaseUrl,
+  )
+}
+
+export function readSupabaseAnonKey(): string {
+  return resolveKey(
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    PUBLIC_RUNTIME_CONFIG.supabaseAnonKey,
+  )
 }
 
 export function isProdBuild(): boolean {
   return import.meta.env.PROD === true
 }
 
-/** Arabic guidance when a VITE_* secret was not baked into the production bundle. */
+/** Kept for rare misconfiguration paths — key should normally always resolve. */
 export function missingEnvArabicMessage(varName: string): string {
   if (isProdBuild()) {
     return (
-      `${varName} غير متوفر في نسخة النشر على GitHub Pages. ` +
-      `أضف القيمة في GitHub → Settings → Secrets and variables → Actions، ` +
-      `ثم أعد تشغيل workflow النشر (Deploy to GitHub Pages).`
+      `${varName} غير متوفر. تحقق من إعدادات النشر أو أعد بناء المشروع.`
     )
   }
   return (
-    `${varName} غير مُعدّ محلياً. أضفه إلى ملف .env في جذر المشروع ثم أعد تشغيل npm run dev.`
+    `${varName} غير مُعدّ. أضفه إلى ملف .env ثم أعد تشغيل npm run dev.`
   )
 }
