@@ -18,28 +18,12 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ])
 
-/**
- * Hardcoded fallback so GitHub Pages works without `.env` / Actions secrets.
- * Prefers `import.meta.env.VITE_PLANTNET_API_KEY` when present.
- */
-const PLANTNET_API_KEY_FALLBACK = '2b10d9WpUNeMmsuwvO7MLBaUu'
+/** Hardcoded Pl@ntNet key — no env lookup (works on GitHub Pages without `.env`). */
+const PLANTNET_API_KEY = '2b10d9WpUNeMmsuwvO7MLBaUu'
 
-function getPlantNetApiKey(): string {
-  const fromEnv = String(import.meta.env.VITE_PLANTNET_API_KEY ?? '').trim()
-  if (
-    fromEnv &&
-    fromEnv !== 'undefined' &&
-    fromEnv !== 'null' &&
-    !fromEnv.toLowerCase().startsWith('your-')
-  ) {
-    return fromEnv
-  }
-  return PLANTNET_API_KEY_FALLBACK
-}
-
-/** Always true — fallback key is always available for GH Pages. */
+/** Always true — key is embedded in the service. */
 export function isPlantNetConfigured(): boolean {
-  return getPlantNetApiKey().length > 0
+  return true
 }
 
 /**
@@ -174,8 +158,6 @@ export async function identifyPlantWithPlantNet(
   file: File,
   options: IdentifyImageOptions = {},
 ): Promise<PlantIdentificationOutcome> {
-  const apiKey = getPlantNetApiKey()
-
   try {
     validatePlantImage(file)
   } catch (error) {
@@ -201,7 +183,7 @@ export async function identifyPlantWithPlantNet(
   formData.append('images', file, file.name || 'plant.jpg')
   formData.append('organs', organ)
 
-  const url = `${PLANTNET_BASE}/${encodeURIComponent(project)}?api-key=${encodeURIComponent(apiKey)}`
+  const url = `${PLANTNET_BASE}/${encodeURIComponent(project)}?api-key=${PLANTNET_API_KEY}`
 
   let response: Response
   try {
