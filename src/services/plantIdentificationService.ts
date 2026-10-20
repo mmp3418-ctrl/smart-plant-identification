@@ -7,6 +7,10 @@ import type {
   PlantNetResult,
 } from '@/types/plantnet'
 import { ServiceError } from '@/services/errors'
+import {
+  missingEnvArabicMessage,
+  readPlantNetApiKey,
+} from '@/lib/env'
 
 const PLANTNET_BASE = 'https://my-api.plantnet.org/v2/identify'
 const DEFAULT_PROJECT = 'all'
@@ -19,14 +23,10 @@ const ALLOWED_MIME_TYPES = new Set([
 ])
 
 function getPlantNetApiKey(): string | null {
-  const key = import.meta.env.VITE_PLANTNET_API_KEY as string | undefined
-  if (!key || key.trim() === '' || key.includes('your-')) {
-    return null
-  }
-  return key.trim()
+  return readPlantNetApiKey()
 }
 
-/** True when `VITE_PLANTNET_API_KEY` is present and usable. */
+/** True when `VITE_PLANTNET_API_KEY` was inlined into the client bundle. */
 export function isPlantNetConfigured(): boolean {
   return getPlantNetApiKey() !== null
 }
@@ -168,8 +168,7 @@ export async function identifyPlantWithPlantNet(
     return {
       ok: false,
       code: 'MISSING_API_KEY',
-      message:
-        'مفتاح واجهة Pl@ntNet غير مُعدّ. أضف VITE_PLANTNET_API_KEY إلى ملف البيئة.',
+      message: missingEnvArabicMessage('VITE_PLANTNET_API_KEY'),
     }
   }
 

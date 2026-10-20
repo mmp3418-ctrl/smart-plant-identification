@@ -1,14 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { readSupabaseAnonKey, readSupabaseUrl } from '@/lib/env'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const supabaseUrl = readSupabaseUrl()
+const supabaseAnonKey = readSupabaseAnonKey()
 
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-    supabaseAnonKey &&
-    !supabaseUrl.includes('your-project') &&
-    supabaseAnonKey !== 'your-anon-key',
-)
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabaseAnonKey!)

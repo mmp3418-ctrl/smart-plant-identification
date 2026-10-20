@@ -81,7 +81,9 @@ export function IdentifyPage() {
     if (!isPlantNetConfigured()) {
       setPhase('error')
       setErrorMessage(
-        'مفتاح Pl@ntNet غير مُعدّ. أضف VITE_PLANTNET_API_KEY إلى ملف البيئة ثم أعد تشغيل الخادم.',
+        import.meta.env.PROD
+          ? 'VITE_PLANTNET_API_KEY غير متوفر في نسخة GitHub Pages. أضف السر في Settings → Secrets and variables → Actions ثم أعد نشر المشروع.'
+          : 'VITE_PLANTNET_API_KEY غير مُعدّ. أضفه إلى ملف .env ثم أعد تشغيل npm run dev.',
       )
       return
     }
