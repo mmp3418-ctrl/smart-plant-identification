@@ -32,7 +32,7 @@ export function PlantCard({ plant, className }: PlantCardProps) {
 
       <button
         type="button"
-        onClick={() => toggleFavorite(plant.id)}
+        onClick={() => void toggleFavorite(plant.id)}
         aria-label={favorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
         aria-pressed={favorite}
         className={cn(

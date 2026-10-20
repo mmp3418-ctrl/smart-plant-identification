@@ -6,18 +6,18 @@ import { cn } from '@/lib/cn'
 
 export function RootLayout() {
   const location = useLocation()
-  const isIdentify = location.pathname.startsWith('/identify')
+  const isIdentifyCapture = location.pathname === '/identify'
 
   return (
     <div className="flex min-h-dvh flex-col">
-      {!isIdentify ? <Header /> : null}
+      {!isIdentifyCapture ? <Header /> : null}
       <RouteLoadingOverlay />
-      <main className={cn('flex-1', isIdentify && 'bg-brand-dark')}>
+      <main className={cn('flex-1', isIdentifyCapture && 'bg-[#142D21]')}>
         <div key={location.pathname} className="page-enter">
           <Outlet />
         </div>
       </main>
-      {!isIdentify ? <Footer /> : null}
+      {!isIdentifyCapture ? <Footer /> : null}
     </div>
   )
 }

@@ -103,7 +103,7 @@ export function PlantDetailPage() {
                     aria-hidden
                   />
                 }
-                onClick={() => toggleFavorite(plant.id)}
+                onClick={() => void toggleFavorite(plant.id)}
                 aria-pressed={favorite}
               >
                 {favorite ? 'في المفضلة' : 'إضافة للمفضلة'}

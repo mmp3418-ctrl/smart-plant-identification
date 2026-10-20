@@ -8,6 +8,7 @@ import { RootLayout } from '@/layouts/RootLayout'
 import { HomePage } from '@/pages/HomePage'
 import { DirectoryPage } from '@/pages/DirectoryPage'
 import { IdentifyPage } from '@/pages/IdentifyPage'
+import { IdentifyResultPage } from '@/pages/IdentifyResultPage'
 import { PlantDetailPage } from '@/pages/PlantDetailPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -36,8 +37,9 @@ export default function App() {
               <Route element={<RootLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="directory" element={<DirectoryPage />} />
-                <Route path="identify" element={<IdentifyPage />} />
-                <Route path="plants/:id" element={<PlantDetailPage />} />
+              <Route path="identify" element={<IdentifyPage />} />
+              <Route path="identify/result" element={<IdentifyResultPage />} />
+              <Route path="plants/:id" element={<PlantDetailPage />} />
                 <Route path="favorites" element={<FavoritesPage />} />
                 <Route path="history" element={<HistoryPage />} />
                 <Route path="admin" element={<AdminPage />} />
