@@ -108,46 +108,117 @@ function parsePlantNetPayload(
   }
 }
 
-function localizeApiDetail(raw: string, status: number): string {
-  const lower = raw.toLowerCase()
+function buildIdentifyUrl(project: string): string {
+  // Auth must be a query param (not a header), per Pl@ntNet docs:
+  // https://my-api.plantnet.org/v2/identify/all?api-key=…
+  const url = new URL(`${PLANTNET_BASE}/${encodeURIComponent(project)}`)
+  url.searchParams.set('api-key', PLANTNET_API_KEY)
+  return url.toString()
+}
+
+function extractErrorFields(data: unknown): string {
+  if (data == null) return ''
+  if (typeof data === 'string') return data.trim()
+  if (typeof data !== 'object') return String(data)
+
+  const record = data as Record<string, unknown>
+  const parts: string[] = []
+
+  for (const key of ['message', 'error', 'status', 'statusMessage', 'detail'] as const) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      parts.push(value.trim())
+    } else if (typeof value === 'number') {
+      parts.push(String(value))
+    }
+  }
+
+  if (parts.length > 0) return parts.join(' | ')
+  try {
+    return JSON.stringify(data)
+  } catch {
+    return ''
+  }
+}
+
+function localizeApiDetail(
+  rawBody: string,
+  status: number,
+  statusText: string,
+): string {
+  const lower = rawBody.toLowerCase()
+  const technical = [
+    `HTTP ${status}${statusText ? ` ${statusText}` : ''}`,
+    rawBody.trim() || null,
+  ]
+    .filter(Boolean)
+    .join(' — ')
+
+  if (
+    status === 0 ||
+    lower.includes('cors') ||
+    lower.includes('failed to fetch')
+  ) {
+    return [
+      'فشل الاتصال بـ Pl@ntNet (غالباً CORS).',
+      'فعّل "Expose my API key" وأضف نطاق GitHub Pages في Authorized domains على my.plantnet.org.',
+      technical,
+    ].join(' ')
+  }
+
   if (status === 401 || status === 403 || lower.includes('api key')) {
-    return 'مفتاح Pl@ntNet غير صالح أو غير مصرّح. تحقق من VITE_PLANTNET_API_KEY.'
+    return [
+      'رفض Pl@ntNet المصادقة (401/403).',
+      'تأكد أن المفتاح صالح وأن النطاق مُصرّح في إعدادات API.',
+      technical,
+    ].join(' ')
   }
+
   if (status === 429 || lower.includes('quota') || lower.includes('rate')) {
-    return 'تم تجاوز حد طلبات التعريف. حاول مرة أخرى لاحقاً.'
+    return `تم تجاوز حد طلبات التعريف. ${technical}`
   }
+
   if (status >= 500) {
-    return 'خدمة التعريف غير متاحة حالياً. حاول مرة أخرى بعد قليل.'
+    return `خدمة التعريف غير متاحة حالياً. ${technical}`
   }
-  // Prefer Arabic wrapper; keep short technical hint only when useful
-  if (raw.trim()) {
-    return `فشل طلب التعريف: ${raw.trim()}`
-  }
-  return `فشل طلب التعريف (رمز ${status}).`
+
+  return `فشل طلب التعريف. ${technical}`
 }
 
 async function readApiErrorMessage(response: Response): Promise<string> {
-  let raw = ''
+  let rawBody = ''
+
   try {
-    const data: unknown = await response.json()
-    if (data && typeof data === 'object') {
-      if (
-        'message' in data &&
-        typeof (data as { message: unknown }).message === 'string'
-      ) {
-        raw = (data as { message: string }).message
-      } else if (
-        'error' in data &&
-        typeof (data as { error: unknown }).error === 'string'
-      ) {
-        raw = (data as { error: string }).error
-      }
-    }
-  } catch {
-    /* ignore JSON parse errors */
+    rawBody = await response.text()
+  } catch (error) {
+    console.error('[PlantNet] failed to read error body:', error)
+    rawBody = ''
   }
 
-  return localizeApiDetail(raw, response.status)
+  let parsedHint = ''
+  if (rawBody.trim()) {
+    try {
+      parsedHint = extractErrorFields(JSON.parse(rawBody) as unknown)
+    } catch {
+      parsedHint = rawBody.trim()
+    }
+  }
+
+  const detail = localizeApiDetail(
+    parsedHint || rawBody,
+    response.status,
+    response.statusText,
+  )
+
+  console.error('[PlantNet] identify failed', {
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    body: rawBody,
+    parsed: parsedHint || null,
+  })
+
+  return detail
 }
 
 /**
@@ -183,20 +254,28 @@ export async function identifyPlantWithPlantNet(
   formData.append('images', file, file.name || 'plant.jpg')
   formData.append('organs', organ)
 
-  const url = `${PLANTNET_BASE}/${encodeURIComponent(project)}?api-key=${PLANTNET_API_KEY}`
+  // Exact pattern: …/v2/identify/all?api-key=2b10d9WpUNeMmsuwvO7MLBaUu
+  const url = buildIdentifyUrl(project)
 
   let response: Response
   try {
     response = await fetch(url, {
       method: 'POST',
       body: formData,
+      // Do not set Authorization / api-key headers — Pl@ntNet expects query param only.
     })
-  } catch {
+  } catch (error) {
+    const networkDetail =
+      error instanceof Error ? error.message : String(error ?? 'unknown')
+    console.error('[PlantNet] network/CORS error', { url, error })
     return {
       ok: false,
       code: 'NETWORK',
-      message:
-        'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
+      message: [
+        'تعذّر الاتصال بخدمة التعريف.',
+        'إن ظهرت مشكلة CORS: فعّل "Expose my API key" وأضف نطاق GitHub Pages في Authorized domains.',
+        `التفاصيل: ${networkDetail}`,
+      ].join(' '),
     }
   }
 
@@ -211,12 +290,14 @@ export async function identifyPlantWithPlantNet(
 
   let payload: PlantNetIdentifyResponse
   try {
-    payload = (await response.json()) as PlantNetIdentifyResponse
-  } catch {
+    const text = await response.text()
+    payload = JSON.parse(text) as PlantNetIdentifyResponse
+  } catch (error) {
+    console.error('[PlantNet] invalid JSON success body:', error)
     return {
       ok: false,
       code: 'API_ERROR',
-      message: 'استجابة غير صالحة من خدمة التعريف.',
+      message: 'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
     }
   }
 
