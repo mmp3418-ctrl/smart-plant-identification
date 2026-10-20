@@ -7,10 +7,6 @@ import type {
   PlantNetResult,
 } from '@/types/plantnet'
 import { ServiceError } from '@/services/errors'
-import {
-  missingEnvArabicMessage,
-  readPlantNetApiKey,
-} from '@/lib/env'
 
 const PLANTNET_BASE = 'https://my-api.plantnet.org/v2/identify'
 const DEFAULT_PROJECT = 'all'
@@ -22,11 +18,26 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ])
 
+/**
+ * Hardcoded fallback so GitHub Pages works without `.env` / Actions secrets.
+ * Prefers `import.meta.env.VITE_PLANTNET_API_KEY` when present.
+ */
+const PLANTNET_API_KEY_FALLBACK = '2b10d9WpUNeMmsuwvO7MLBaUu'
+
 function getPlantNetApiKey(): string {
-  return readPlantNetApiKey()
+  const fromEnv = String(import.meta.env.VITE_PLANTNET_API_KEY ?? '').trim()
+  if (
+    fromEnv &&
+    fromEnv !== 'undefined' &&
+    fromEnv !== 'null' &&
+    !fromEnv.toLowerCase().startsWith('your-')
+  ) {
+    return fromEnv
+  }
+  return PLANTNET_API_KEY_FALLBACK
 }
 
-/** Always true when public fallback or env key is available (GH Pages safe). */
+/** Always true — fallback key is always available for GH Pages. */
 export function isPlantNetConfigured(): boolean {
   return getPlantNetApiKey().length > 0
 }
@@ -164,14 +175,6 @@ export async function identifyPlantWithPlantNet(
   options: IdentifyImageOptions = {},
 ): Promise<PlantIdentificationOutcome> {
   const apiKey = getPlantNetApiKey()
-  if (!apiKey) {
-    // Extremely unlikely with public fallback — keep Arabic safety message
-    return {
-      ok: false,
-      code: 'MISSING_API_KEY',
-      message: missingEnvArabicMessage('VITE_PLANTNET_API_KEY'),
-    }
-  }
 
   try {
     validatePlantImage(file)
