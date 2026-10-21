@@ -13,19 +13,22 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * Gemini Flash models for plant identification via `generateContent` only.
- * Note: `gemini-1.5-flash` was shut down Sep 2025 and returns 404 on v1beta.
- * @see https://ai.google.dev/gemini-api/docs/models
+ * Model order for plant ID via `generateContent`.
+ * Primary → secondary Flash → Pro fallback when capacity (503) is exhausted.
  */
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-3.8-flash',
-  'gemini-flash-latest',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
 ] as const
 
 /** Exclusive identification endpoint family: Gemini `generateContent` only. */
 const GEMINI_API_BASE =
   'https://generativelanguage.googleapis.com/v1beta/models'
+
+/** Initial attempt + 2 retries on HTTP 503 (high demand). */
+const MAX_503_RETRIES = 2
+const RETRY_BASE_DELAY_MS = 800
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -433,16 +436,14 @@ function extractApiErrorText(rawBody: string): string {
   return trimmed.slice(0, 400)
 }
 
-async function messageForHttpError(response: Response): Promise<string> {
-  let rawBody = ''
-  try {
-    rawBody = await response.text()
-  } catch {
-    rawBody = ''
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
 
+function messageFromStatusAndBody(status: number, rawBody: string): string {
   const detail = extractApiErrorText(rawBody)
-  const status = response.status
 
   if (status === 400) {
     return detail
@@ -462,19 +463,101 @@ async function messageForHttpError(response: Response): Promise<string> {
   if (status === 429) {
     return 'تم تجاوز حد طلبات التعريف (429). حاول مرة أخرى لاحقاً.'
   }
+  if (status === 503) {
+    return [
+      'خدمة Gemini مشغولة حالياً بسبب ارتفاع الطلب (503).',
+      'أعد المحاولة بعد لحظات.',
+      detail ? `التفاصيل: ${detail}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
   if (status >= 500) {
     return detail
       ? `خدمة التعريف غير متاحة حالياً (${status}): ${detail}`
       : `خدمة التعريف غير متاحة حالياً (HTTP ${status}).`
   }
 
-  const statusLabel = response.statusText
-    ? `HTTP ${status} ${response.statusText}`
-    : `HTTP ${status}`
-
+  const statusLabel = `HTTP ${status}`
   return detail
     ? `فشل طلب التعريف (${statusLabel}): ${detail}`
     : `فشل طلب التعريف (${statusLabel}).`
+}
+
+type GeminiFetchResult =
+  | { kind: 'ok'; response: Response }
+  | { kind: 'network'; error: unknown }
+  | { kind: 'http'; response: Response; body: string }
+
+/**
+ * POST once to a Gemini model. Caller owns 503 retry / model fallback policy.
+ */
+async function fetchGeminiOnce(
+  model: string,
+  bodyJson: string,
+): Promise<GeminiFetchResult> {
+  const url = buildGeminiUrl(model)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: bodyJson,
+    })
+
+    if (response.ok) {
+      return { kind: 'ok', response }
+    }
+
+    // Buffer body so retries / fallbacks can still read the error text
+    let body = ''
+    try {
+      body = await response.text()
+    } catch {
+      body = ''
+    }
+    return { kind: 'http', response, body }
+  } catch (error) {
+    return { kind: 'network', error }
+  }
+}
+
+/**
+ * Call one model with up to `MAX_503_RETRIES` exponential-backoff retries on 503.
+ */
+async function fetchGeminiWith503Retries(
+  model: string,
+  bodyJson: string,
+): Promise<GeminiFetchResult> {
+  let lastResult: GeminiFetchResult | null = null
+
+  // attempt 0 = first try; then MAX_503_RETRIES additional tries on 503
+  for (let attempt = 0; attempt <= MAX_503_RETRIES; attempt += 1) {
+    if (attempt > 0) {
+      const delayMs = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
+      console.warn('[Gemini] 503 high demand — retrying', {
+        model,
+        attempt,
+        delayMs,
+      })
+      await sleep(delayMs)
+    }
+
+    const result = await fetchGeminiOnce(model, bodyJson)
+    lastResult = result
+
+    if (result.kind === 'ok' || result.kind === 'network') {
+      return result
+    }
+
+    if (result.response.status !== 503) {
+      return result
+    }
+    // else: 503 → loop for another retry (or exit after max)
+  }
+
+  return lastResult ?? { kind: 'network', error: new Error('empty retry loop') }
 }
 
 // ─── Public: identify ────────────────────────────────────────────────────────
@@ -542,49 +625,52 @@ export async function identifyPlant(
   const bodyJson = JSON.stringify(body)
 
   let lastHttpError: PlantIdentificationOutcome | null = null
+  let saw503 = false
 
   for (const model of GEMINI_MODELS) {
-    const url = buildGeminiUrl(model)
+    const result = await fetchGeminiWith503Retries(model, bodyJson)
 
-    let response: Response
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: bodyJson,
-      })
-    } catch (error) {
-      console.error('[Gemini] network failure', { model, error })
+    if (result.kind === 'network') {
+      console.error('[Gemini] network failure', { model, error: result.error })
       return failure(
         'NETWORK',
         'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
       )
     }
 
-    // Model retired / not found → try next supported Flash identifier
-    if (response.status === 404) {
-      const message = await messageForHttpError(response)
-      console.warn('[Gemini] model not found, trying next', { model, message })
-      lastHttpError = failure('API_ERROR', message)
-      continue
-    }
+    if (result.kind === 'http') {
+      const { response, body: errorBody } = result
+      const message = messageFromStatusAndBody(response.status, errorBody)
 
-    if (!response.ok) {
-      const message = await messageForHttpError(response)
+      if (response.status === 503) {
+        saw503 = true
+        console.warn('[Gemini] 503 after retries — trying next model', {
+          model,
+          message,
+        })
+        lastHttpError = failure('API_ERROR', message)
+        continue
+      }
+
+      // Model retired / not found → try next identifier
+      if (response.status === 404) {
+        console.warn('[Gemini] model not found, trying next', { model, message })
+        lastHttpError = failure('API_ERROR', message)
+        continue
+      }
+
       console.error('[Gemini] HTTP error', {
         model,
         status: response.status,
-        statusText: response.statusText,
         message,
       })
       return failure('API_ERROR', message)
     }
 
+    // Success path — parse JSON from the Response body
     let rawJson: unknown
     try {
-      rawJson = await response.json()
+      rawJson = await result.response.json()
     } catch (error) {
       console.error('[Gemini] JSON parse failure', { model, error })
       return failure(
@@ -613,11 +699,18 @@ export async function identifyPlant(
     }
   }
 
+  if (saw503) {
+    return failure(
+      'API_ERROR',
+      'خدمة Gemini مشغولة بسبب ارتفاع الطلب (503) على كل النماذج المجرّبة (2.0-flash → 1.5-flash → 1.5-pro). انتظر دقيقة ثم أعد المحاولة.',
+    )
+  }
+
   return (
     lastHttpError ??
     failure(
       'API_ERROR',
-      'لم يُعثر على نموذج Gemini مدعوم (تمت تجربة gemini-2.5-flash وغيره).',
+      'لم يُعثر على نموذج Gemini مدعوم. تحقّق من المفتاح أو أعد المحاولة لاحقاً.',
     )
   )
 }
