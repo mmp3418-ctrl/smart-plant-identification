@@ -18,6 +18,16 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ])
 
+const VALID_ORGANS = new Set<PlantNetOrgan>([
+  'auto',
+  'leaf',
+  'flower',
+  'fruit',
+  'bark',
+  'habit',
+  'other',
+])
+
 /** Hardcoded Pl@ntNet key — no env lookup (works on GitHub Pages without `.env`). */
 const PLANTNET_API_KEY = '2b10d9WpUNeMmsuwvO7MLBaUu'
 
@@ -30,6 +40,8 @@ const CORS_PROXY_WRAPPERS: Array<(targetUrl: string) => string> = [
   (targetUrl) =>
     `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
 ]
+
+const ARABIC_SCRIPT = /[\u0600-\u06FF]/
 
 /** Always true — key is embedded in the service. */
 export function isPlantNetConfigured(): boolean {
@@ -64,10 +76,58 @@ export function validatePlantImage(file: File): void {
   }
 }
 
+/** Normalize a single organ value from UI / options. */
+export function normalizeOrgan(value: unknown): PlantNetOrgan {
+  if (typeof value === 'string' && VALID_ORGANS.has(value as PlantNetOrgan)) {
+    return value as PlantNetOrgan
+  }
+  return 'auto'
+}
+
+/**
+ * Resolve organs for the multipart body.
+ * - Explicit `organs[]` wins (multi-hint for one image when caller provides them).
+ * - Else single `organ` from user selection.
+ * - Default `auto` (Pl@ntNet chooses leaf/flower/habit/…).
+ */
+export function resolveOrgans(options: IdentifyImageOptions = {}): PlantNetOrgan[] {
+  if (options.organs?.length) {
+    const cleaned = options.organs.map(normalizeOrgan)
+    return cleaned.length > 0 ? cleaned : ['auto']
+  }
+  return [normalizeOrgan(options.organ)]
+}
+
+/** Prefer Arabic common names, then remaining unique names from Pl@ntNet. */
+function orderCommonNames(names: string[]): string[] {
+  const cleaned = names
+    .map((name) => name.trim())
+    .filter(Boolean)
+
+  const arabic = cleaned.filter((name) => ARABIC_SCRIPT.test(name))
+  const other = cleaned.filter((name) => !ARABIC_SCRIPT.test(name))
+  const seen = new Set<string>()
+  const ordered: string[] = []
+
+  for (const name of [...arabic, ...other]) {
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    ordered.push(name)
+  }
+
+  return ordered
+}
+
+/**
+ * Map one Pl@ntNet `results[i]` entry → app candidate.
+ * Primary fields (esp. results[0]): scientific name, Arabic-first commons, score.
+ */
 function mapCandidate(result: PlantNetResult): PlantIdentificationCandidate | null {
   const scientificName =
-    result.species.scientificNameWithoutAuthor?.trim() ||
-    result.species.scientificName?.trim()
+    result.species?.scientificNameWithoutAuthor?.trim() ||
+    result.species?.scientificName?.trim() ||
+    ''
 
   if (!scientificName) return null
 
@@ -75,31 +135,35 @@ function mapCandidate(result: PlantNetResult): PlantIdentificationCandidate | nu
   const taxonId =
     gbifId === undefined || gbifId === null ? null : String(gbifId)
 
-  const score = typeof result.score === 'number' ? result.score : 0
+  const score = typeof result.score === 'number' && Number.isFinite(result.score)
+    ? result.score
+    : 0
 
   return {
     scientificName,
     scientificNameAuthorship:
-      result.species.scientificNameAuthorship?.trim() || null,
-    commonNames: (result.species.commonNames ?? []).filter(
-      (name): name is string => Boolean(name?.trim()),
-    ),
-    family: result.species.family?.scientificNameWithoutAuthor?.trim() || null,
-    genus: result.species.genus?.scientificNameWithoutAuthor?.trim() || null,
+      result.species?.scientificNameAuthorship?.trim() || null,
+    commonNames: orderCommonNames(result.species?.commonNames ?? []),
+    family: result.species?.family?.scientificNameWithoutAuthor?.trim() || null,
+    genus: result.species?.genus?.scientificNameWithoutAuthor?.trim() || null,
     score,
     taxonId,
   }
 }
 
+/**
+ * Strict mapping of the live Pl@ntNet `results` array (API order preserved).
+ * `bestMatch` / primary candidate always come from `results[0]` when present.
+ */
 function parsePlantNetPayload(
   payload: PlantNetIdentifyResponse,
   maxResults: number,
 ): PlantIdentificationOutcome {
-  const candidates = (payload.results ?? [])
+  const rawResults = Array.isArray(payload.results) ? payload.results : []
+  const candidates = rawResults
     .map(mapCandidate)
     .filter((item): item is PlantIdentificationCandidate => item !== null)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults)
+    .slice(0, Math.max(1, maxResults))
 
   if (candidates.length === 0) {
     return {
@@ -110,19 +174,59 @@ function parsePlantNetPayload(
     }
   }
 
+  const primary = candidates[0]
+  const bestMatch =
+    payload.bestMatch?.trim() ||
+    primary.scientificName
+
   return {
     ok: true,
-    bestMatch: payload.bestMatch?.trim() || candidates[0]?.scientificName || null,
+    bestMatch,
     candidates,
     identifiedAt: new Date().toISOString(),
   }
 }
 
+/** Primary scientific name + Arabic commons + confidence % from `results[0]`. */
+export function summarizePrimaryCandidate(
+  outcome: Extract<PlantIdentificationOutcome, { ok: true }>,
+): {
+  scientificName: string
+  commonArabicNames: string[]
+  confidencePercent: number
+} {
+  const primary = outcome.candidates[0]
+  const scientificName =
+    primary?.scientificName || outcome.bestMatch || 'غير معروف'
+  const commonArabicNames = (primary?.commonNames ?? []).filter((name) =>
+    ARABIC_SCRIPT.test(name),
+  )
+  return {
+    scientificName,
+    commonArabicNames,
+    confidencePercent: confidencePercent(primary?.score ?? 0),
+  }
+}
+
 function buildIdentifyUrl(project: string): string {
-  // Auth must be a query param (not a header), per Pl@ntNet docs.
+  // Auth + Arabic common names via query params (not headers).
   const url = new URL(`${PLANTNET_BASE}/${encodeURIComponent(project)}`)
   url.searchParams.set('api-key', PLANTNET_API_KEY)
+  url.searchParams.set('lang', 'ar')
   return url.toString()
+}
+
+function appendOrgans(formData: FormData, organs: PlantNetOrgan[]): void {
+  // Pl@ntNet expects one `organs` field per image. For a single image we send
+  // the user-selected organ (or `auto`). Extra organs are only appended when
+  // the caller explicitly requests multi-organ hints for the same upload.
+  if (organs.length <= 1) {
+    formData.append('organs', organs[0] ?? 'auto')
+    return
+  }
+  for (const organ of organs) {
+    formData.append('organs', organ)
+  }
 }
 
 function isOriginBlockedError(status: number, body: string): boolean {
@@ -167,63 +271,28 @@ function tryParseJson(text: string): unknown | null {
 }
 
 /**
- * Offline / CORS fallback so GitHub Pages never hard-fails identification.
- * Returns plausible candidates shaped like a live Pl@ntNet success payload.
+ * Last-resort mock — only when every attempt fails with a pure network/CORS throw
+ * (no HTTP response body from Pl@ntNet at all). Never used to invent matches
+ * when an API JSON payload was received.
  */
 function buildMockIdentification(
   maxResults: number,
 ): Extract<PlantIdentificationOutcome, { ok: true }> {
   const pool: PlantIdentificationCandidate[] = [
     {
-      scientificName: 'Rosa damascena',
-      scientificNameAuthorship: 'Mill.',
-      commonNames: ['ورد دمشقي', 'Damask rose'],
-      family: 'Rosaceae',
-      genus: 'Rosa',
-      score: 0.86,
-      taxonId: null,
-    },
-    {
-      scientificName: 'Olea europaea',
-      scientificNameAuthorship: 'L.',
-      commonNames: ['زيتون', 'Olive'],
-      family: 'Oleaceae',
-      genus: 'Olea',
-      score: 0.74,
-      taxonId: null,
-    },
-    {
-      scientificName: 'Ficus carica',
-      scientificNameAuthorship: 'L.',
-      commonNames: ['تين', 'Fig'],
-      family: 'Moraceae',
-      genus: 'Ficus',
-      score: 0.61,
-      taxonId: null,
-    },
-    {
-      scientificName: 'Lavandula angustifolia',
-      scientificNameAuthorship: 'Mill.',
-      commonNames: ['خزامى', 'Lavender'],
-      family: 'Lamiaceae',
-      genus: 'Lavandula',
-      score: 0.52,
-      taxonId: null,
-    },
-    {
-      scientificName: 'Mentha spicata',
-      scientificNameAuthorship: 'L.',
-      commonNames: ['نعناع', 'Spearmint'],
-      family: 'Lamiaceae',
-      genus: 'Mentha',
-      score: 0.44,
+      scientificName: 'Plantae sp.',
+      scientificNameAuthorship: null,
+      commonNames: ['نبات غير مؤكد (وضع عدم الاتصال)'],
+      family: null,
+      genus: null,
+      score: 0.35,
       taxonId: null,
     },
   ]
 
   const candidates = pool.slice(0, Math.max(1, maxResults))
   console.warn(
-    '[PlantNet] using mock identification fallback (CORS / API unavailable)',
+    '[PlantNet] total network failure — offline placeholder only (not a real ID)',
   )
 
   return {
@@ -243,7 +312,6 @@ async function postIdentifyOnce(
     const response = await fetch(requestUrl, {
       method: 'POST',
       body: formData,
-      // Pl@ntNet expects api-key as query param only — never Authorization headers.
     })
     const body = await readResponseText(response)
     console.info(`[PlantNet] ${label}`, {
@@ -265,11 +333,27 @@ function parseSuccessBody(
 ): PlantIdentificationOutcome | null {
   const parsed = tryParseJson(body)
   if (!parsed || typeof parsed !== 'object') return null
+  if (!('results' in parsed) && !('bestMatch' in parsed)) return null
   return parsePlantNetPayload(parsed as PlantNetIdentifyResponse, maxResults)
 }
 
+function extractErrorMessage(body: string, status: number, statusText: string): string {
+  const parsed = tryParseJson(body)
+  let detail = body.trim().slice(0, 300)
+  if (parsed && typeof parsed === 'object') {
+    const record = parsed as Record<string, unknown>
+    const message =
+      (typeof record.message === 'string' && record.message) ||
+      (typeof record.error === 'string' && record.error) ||
+      ''
+    if (message) detail = message
+  }
+  return `فشل طلب التعريف (HTTP ${status}${statusText ? ` ${statusText}` : ''})${detail ? `: ${detail}` : ''}`
+}
+
 /**
- * Direct call, then public CORS proxies, then mock — so Pages always resolves.
+ * Direct → CORS proxies. Mock only if every attempt throws (total network failure).
+ * Any live JSON `results` array is mapped strictly — never replaced by mock flora.
  */
 async function identifyWithResilience(
   plantNetUrl: string,
@@ -285,59 +369,82 @@ async function identifyWithResilience(
   ]
 
   const failures: string[] = []
+  let sawHttpResponse = false
+  let lastApiError: PlantIdentificationOutcome | null = null
 
   for (const attempt of attempts) {
     const cloned = cloneFormData(formData)
     const result = await postIdentifyOnce(attempt.url, cloned, attempt.label)
 
     if ('error' in result) {
-      if (isLikelyCorsNetworkError(result.error)) {
-        failures.push(
-          `${attempt.label}: network/CORS (${result.error instanceof Error ? result.error.message : 'unknown'})`,
-        )
-        continue
-      }
       failures.push(
-        `${attempt.label}: ${result.error instanceof Error ? result.error.message : 'request failed'}`,
+        `${attempt.label}: network (${result.error instanceof Error ? result.error.message : 'unknown'})`,
       )
       continue
     }
 
+    sawHttpResponse = true
     const { response, body } = result
 
     if (response.ok) {
       const outcome = parseSuccessBody(body, maxResults)
       if (outcome) {
-        if (outcome.ok) return outcome
-        failures.push(`${attempt.label}: ${outcome.message}`)
-        // NO_RESULTS from a live API should not fall through to mock if we got a valid API answer
-        if (outcome.code === 'NO_RESULTS') return outcome
-        continue
+        // Live API payload wins — including NO_RESULTS. Never mock over this.
+        if (outcome.ok) {
+          const primary = summarizePrimaryCandidate(outcome)
+          console.info('[PlantNet] mapped results[0]', primary)
+        }
+        return outcome
       }
-      failures.push(`${attempt.label}: invalid JSON (HTTP ${response.status})`)
+      failures.push(`${attempt.label}: HTTP ${response.status} but not a Pl@ntNet results payload`)
+      lastApiError = {
+        ok: false,
+        code: 'API_ERROR',
+        message: 'استجابة غير صالحة من خدمة التعريف (لا توجد مصفوفة results).',
+      }
       continue
     }
 
     if (isOriginBlockedError(response.status, body)) {
       failures.push(`${attempt.label}: Origin not allowed (HTTP 403)`)
-      continue
-    }
-
-    // Auth/rate-limit on direct may also appear via proxy; keep trying proxies once.
-    if (response.status === 401 || response.status === 403) {
-      failures.push(
-        `${attempt.label}: HTTP ${response.status} — ${body.slice(0, 200) || response.statusText}`,
-      )
+      lastApiError = {
+        ok: false,
+        code: 'API_ERROR',
+        message: extractErrorMessage(body, response.status, response.statusText),
+      }
       continue
     }
 
     failures.push(
       `${attempt.label}: HTTP ${response.status} — ${body.slice(0, 200) || response.statusText}`,
     )
+    lastApiError = {
+      ok: false,
+      code: 'API_ERROR',
+      message: extractErrorMessage(body, response.status, response.statusText),
+    }
   }
 
-  console.error('[PlantNet] all live attempts failed; using mock fallback', failures)
-  return buildMockIdentification(maxResults)
+  // Got HTTP answers but no usable results → surface API error (not fake Rosa).
+  if (sawHttpResponse && lastApiError) {
+    console.error('[PlantNet] live attempts exhausted without results', failures)
+    return lastApiError
+  }
+
+  // Pure network/CORS throws only → offline placeholder.
+  const allNetwork = failures.every((entry) => entry.includes('network'))
+  if (allNetwork || !sawHttpResponse) {
+    console.error('[PlantNet] total network failure', failures)
+    return buildMockIdentification(maxResults)
+  }
+
+  return (
+    lastApiError ?? {
+      ok: false,
+      code: 'NETWORK',
+      message: 'تعذّر الاتصال بخدمة التعريف بعد كل المحاولات.',
+    }
+  )
 }
 
 function cloneFormData(source: FormData): FormData {
@@ -350,7 +457,7 @@ function cloneFormData(source: FormData): FormData {
 
 /**
  * Identify a plant image via the Pl@ntNet public API.
- * Uses CORS proxies when Origin is blocked; falls back to mock on total failure.
+ * Maps live `results` strictly; mock only on total network failure.
  */
 export async function identifyPlantWithPlantNet(
   file: File,
@@ -374,20 +481,29 @@ export async function identifyPlantWithPlantNet(
   }
 
   const project = options.project?.trim() || DEFAULT_PROJECT
-  const organ: PlantNetOrgan = options.organ ?? 'auto'
+  const organs = resolveOrgans(options)
   const maxResults = options.maxResults ?? 5
 
   const formData = new FormData()
   formData.append('images', file, file.name || 'plant.jpg')
-  formData.append('organs', organ)
+  appendOrgans(formData, organs)
 
   const plantNetUrl = buildIdentifyUrl(project)
 
   try {
     return await identifyWithResilience(plantNetUrl, formData, maxResults)
   } catch (error) {
-    console.error('[PlantNet] unexpected identify failure; using mock', error)
-    return buildMockIdentification(maxResults)
+    // Unexpected throw with no recoverable HTTP body → treat as total network failure.
+    if (isLikelyCorsNetworkError(error)) {
+      console.error('[PlantNet] unexpected network failure; offline placeholder', error)
+      return buildMockIdentification(maxResults)
+    }
+    console.error('[PlantNet] unexpected identify failure', error)
+    return {
+      ok: false,
+      code: 'UNKNOWN',
+      message: 'حدث خطأ غير متوقع أثناء التعريف.',
+    }
   }
 }
 
@@ -405,7 +521,7 @@ export async function identifyPlantOrThrow(
   return outcome
 }
 
-/** Confidence as a 0–100 percentage for UI display. */
+/** Confidence as a 0–100 percentage for UI display (from Pl@ntNet score 0–1). */
 export function confidencePercent(score: number): number {
   if (!Number.isFinite(score)) return 0
   return Math.round(Math.min(Math.max(score, 0), 1) * 100)

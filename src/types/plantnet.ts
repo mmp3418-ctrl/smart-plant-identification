@@ -42,8 +42,13 @@ export type PlantNetOrgan =
   | 'other'
 
 export interface IdentifyImageOptions {
-  /** Plant organ hint for Pl@ntNet */
+  /** Single plant organ hint for Pl@ntNet (default `auto`) */
   organ?: PlantNetOrgan
+  /**
+   * Optional multi-organ hints. When set, overrides `organ`.
+   * For one image Pl@ntNet normally expects one organ; use sparingly.
+   */
+  organs?: PlantNetOrgan[]
   /** Pl@ntNet project / referential — default `all` */
   project?: string
   /** Max candidates to keep from the API response */
