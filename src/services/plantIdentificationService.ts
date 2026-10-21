@@ -1,24 +1,22 @@
 import type {
+  GeminiGenerateContentResponse,
+  GeminiPlantJson,
   IdentifyImageOptions,
   PlantIdentificationCandidate,
   PlantIdentificationOutcome,
   PlantIdentificationPrimarySummary,
-  PlantNetIdentifyResponse,
-  PlantNetOrgan,
-  PlantNetResult,
-} from '@/types/plantnet'
+} from '@/types/identification'
 import { ServiceError } from '@/services/errors'
 import { compressImageForUpload } from '@/services/imageUtils'
 import { extractBinomialScientificName } from '@/lib/scientificName'
+import { readGeminiApiKey } from '@/lib/env'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const PLANTNET_BASE = 'https://my-api.plantnet.org/v2/identify'
-const DEFAULT_PROJECT = 'all'
-const DEFAULT_MAX_RESULTS = 5
-/** After compression, uploads must stay under this limit. */
+const GEMINI_MODEL = 'gemini-1.5-flash'
+const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
-/** Accept large camera originals; they are compressed before upload. */
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -29,31 +27,32 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const FALLBACK_COMMON_NAME = 'نبات غير محدد'
 const FALLBACK_SCIENTIFIC_NAME = 'نبات غير محدد'
-
-const VALID_ORGANS: ReadonlySet<PlantNetOrgan> = new Set([
-  'auto',
-  'leaf',
-  'flower',
-  'fruit',
-  'bark',
-  'habit',
-  'other',
-])
-
-/** Official Pl@ntNet private key — query parameter only. */
-const PLANTNET_API_KEY = '2b10d9WpUNeMmsuwvO7MLBaUu'
-
 const ARABIC_SCRIPT = /[\u0600-\u06FF]/
+
+const GEMINI_IDENTIFY_PROMPT = `You are an expert botanist. Identify the plant or flower in the image.
+
+Return ONLY a valid JSON object (no markdown, no code fences, no extra text) with exactly these keys:
+{
+  "common_name": "common name in Arabic if known, otherwise English",
+  "scientific_name": "Latin binomial scientific name (genus species) without author",
+  "description": "short Arabic description of the plant and basic care tips",
+  "health_status": "plant appearance / certainty, preferably include a confidence percent like 85%"
+}
+
+If you cannot identify the plant, still return the same JSON keys with best-effort values and a low confidence in health_status.`
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
-/** Key is embedded; always ready for browser calls. */
-export function isPlantNetConfigured(): boolean {
-  return true
+function getGeminiApiKey(): string {
+  return readGeminiApiKey().trim()
+}
+
+export function isGeminiApiConfigured(): boolean {
+  return getGeminiApiKey().length > 0
 }
 
 /**
- * Validate image file before sending to Pl@ntNet.
+ * Validate image file before sending to Gemini.
  * Throws ServiceError with Arabic messages on failure.
  */
 export function validatePlantImage(file: File): void {
@@ -80,10 +79,6 @@ export function validatePlantImage(file: File): void {
   }
 }
 
-/**
- * Display label: first common name → scientific name → Arabic fallback.
- * Never throws on empty / undefined arrays.
- */
 export function displayPlantCommonName(
   candidate: PlantIdentificationCandidate | null | undefined,
   scientificFallback?: string | null,
@@ -92,40 +87,17 @@ export function displayPlantCommonName(
   if (firstCommon) return firstCommon
 
   const scientific =
-    candidate?.scientificName?.trim() ||
-    scientificFallback?.trim() ||
-    ''
+    candidate?.scientificName?.trim() || scientificFallback?.trim() || ''
   if (scientific) return scientific
 
   return FALLBACK_COMMON_NAME
 }
 
-/** Normalize a single organ value from UI / options. */
-export function normalizeOrgan(value: unknown): PlantNetOrgan {
-  if (typeof value === 'string' && VALID_ORGANS.has(value as PlantNetOrgan)) {
-    return value as PlantNetOrgan
-  }
-  return 'auto'
-}
-
-/**
- * Resolve the organ(s) for the multipart body.
- * Preference: explicit `organs[]` → single `organ` → `'auto'`.
- */
-export function resolveOrgans(options: IdentifyImageOptions = {}): PlantNetOrgan[] {
-  if (Array.isArray(options.organs) && options.organs.length > 0) {
-    return options.organs.map(normalizeOrgan)
-  }
-  return [normalizeOrgan(options.organ)]
-}
-
-/** Confidence as a 0–100 percentage (Pl@ntNet score is 0–1). */
 export function confidencePercent(score: number): number {
   if (!Number.isFinite(score)) return 0
   return Math.round(Math.min(Math.max(score, 0), 1) * 100)
 }
 
-/** Primary scientific name, commons, family, and confidence from `results[0]`. */
 export function summarizePrimaryCandidate(
   outcome: Extract<PlantIdentificationOutcome, { ok: true }>,
 ): PlantIdentificationPrimarySummary {
@@ -150,37 +122,67 @@ export function summarizePrimaryCandidate(
     family: primary?.family ?? null,
     confidencePercent: confidencePercent(score),
     score,
+    description: primary?.description ?? null,
+    healthStatus: primary?.healthStatus ?? null,
   }
 }
 
-// ─── Internal: FormData + URL ────────────────────────────────────────────────
+// ─── Internal: image → base64 + Gemini request ───────────────────────────────
 
-/**
- * Direct Pl@ntNet URL — auth only via query string:
- * `https://my-api.plantnet.org/v2/identify/all?api-key=…`
- * Never put the key in headers (that would force a CORS preflight).
- */
-function buildIdentifyUrl(project: string): string {
-  const safeProject = project.trim() || DEFAULT_PROJECT
-  const url = new URL(`${PLANTNET_BASE}/${encodeURIComponent(safeProject)}`)
-  url.searchParams.set('api-key', PLANTNET_API_KEY)
-  url.searchParams.set('lang', 'ar')
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
+}
+
+function resolveMimeType(file: File): string {
+  const mime = (file.type || '').toLowerCase()
+  if (mime === 'image/jpg') return 'image/jpeg'
+  if (mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp') {
+    return mime
+  }
+  return 'image/jpeg'
+}
+
+function buildGeminiUrl(): string {
+  const url = new URL(GEMINI_GENERATE_URL)
+  url.searchParams.set('key', getGeminiApiKey())
   return url.toString()
 }
 
-/** Multipart body only: `images` (file) + `organs` (selected / auto). */
-function buildIdentifyFormData(file: File, organ: PlantNetOrgan): FormData {
-  const formData = new FormData()
-  const filename =
-    typeof file.name === 'string' && file.name.trim()
-      ? file.name.trim()
-      : 'plant.jpg'
-  formData.append('images', file, filename)
-  formData.append('organs', organ)
-  return formData
+function buildGeminiRequestBody(
+  base64Image: string,
+  mimeType: string,
+): Record<string, unknown> {
+  return {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: GEMINI_IDENTIFY_PROMPT },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Image,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+    },
+  }
 }
 
-// ─── Internal: safe parsing (no undefined throws) ────────────────────────────
+// ─── Internal: parsing ───────────────────────────────────────────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -195,152 +197,179 @@ function readOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
-function readScore(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
-  return Math.min(Math.max(value, 0), 1)
-}
-
-function orderCommonNames(names: unknown): string[] {
-  if (!Array.isArray(names)) return []
-
-  const cleaned = names
-    .filter((entry): entry is string => typeof entry === 'string')
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0)
-
-  const arabic = cleaned.filter((name) => ARABIC_SCRIPT.test(name))
-  const other = cleaned.filter((name) => !ARABIC_SCRIPT.test(name))
-  const seen = new Set<string>()
-  const ordered: string[] = []
-
-  for (const name of [...arabic, ...other]) {
-    const key = name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    ordered.push(name)
+/** Pull a 0–100 confidence from free-text health_status when present. */
+function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
+  if (!healthStatus) return 0.7
+  const match = healthStatus.match(/(\d{1,3})\s*%/)
+  if (match?.[1]) {
+    const pct = Number.parseInt(match[1], 10)
+    if (Number.isFinite(pct)) {
+      return Math.min(Math.max(pct, 0), 100) / 100
+    }
   }
-
-  return ordered
+  const lower = healthStatus.toLowerCase()
+  if (
+    lower.includes('high') ||
+    lower.includes('عالي') ||
+    lower.includes('مرتفع') ||
+    lower.includes('مؤكد')
+  ) {
+    return 0.88
+  }
+  if (
+    lower.includes('medium') ||
+    lower.includes('متوسط') ||
+    lower.includes('moderate')
+  ) {
+    return 0.65
+  }
+  if (
+    lower.includes('low') ||
+    lower.includes('منخفض') ||
+    lower.includes('غير متأكد') ||
+    lower.includes('uncertain')
+  ) {
+    return 0.4
+  }
+  return 0.7
 }
 
-function readTaxonName(value: unknown): string | null {
-  const record = asRecord(value)
-  if (!record) return null
-  return (
-    readOptionalString(record.scientificNameWithoutAuthor) ||
-    readOptionalString(record.scientificName)
-  )
+function extractGeminiText(payload: GeminiGenerateContentResponse): string | null {
+  const parts = payload.candidates?.[0]?.content?.parts
+  if (!Array.isArray(parts)) return null
+
+  const chunks: string[] = []
+  for (const part of parts) {
+    const text = readOptionalString(part?.text)
+    if (text) chunks.push(text)
+  }
+  const joined = chunks.join('\n').trim()
+  return joined.length > 0 ? joined : null
 }
 
-/**
- * Map one Pl@ntNet result → app candidate.
- * Never throws on missing nested fields.
- */
-function mapCandidate(result: unknown): PlantIdentificationCandidate | null {
-  const record = asRecord(result)
-  if (!record) return null
+/** Strip markdown fences and isolate the JSON object. */
+function cleanJsonText(raw: string): string {
+  let text = raw.trim()
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  }
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    return text.slice(start, end + 1)
+  }
+  return text
+}
 
-  const species = asRecord(record.species)
-  if (!species) return null
+function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
+  try {
+    const parsed: unknown = JSON.parse(cleanJsonText(rawText))
+    const record = asRecord(parsed)
+    if (!record) return null
+    return {
+      common_name: readOptionalString(record.common_name) ?? undefined,
+      scientific_name: readOptionalString(record.scientific_name) ?? undefined,
+      description: readOptionalString(record.description) ?? undefined,
+      health_status: readOptionalString(record.health_status) ?? undefined,
+    }
+  } catch {
+    return null
+  }
+}
 
+function mapGeminiPlantToCandidate(
+  plant: GeminiPlantJson,
+): PlantIdentificationCandidate {
+  const commonName =
+    readOptionalString(plant.common_name) || FALLBACK_COMMON_NAME
   const rawScientific =
-    readOptionalString(species.scientificNameWithoutAuthor) ||
-    readOptionalString(species.scientificName)
-
-  if (!rawScientific) return null
-
-  // Persist clean binomial for downstream Supabase fuzzy matching
+    readOptionalString(plant.scientific_name) || commonName
   const scientificName =
     extractBinomialScientificName(rawScientific) || rawScientific
-
-  const score = readScore(record.score)
-  const gbif = asRecord(record.gbif)
-  const gbifId = gbif?.id
-  const taxonId =
-    gbifId === undefined || gbifId === null
-      ? null
-      : String(gbifId)
-
-  const commonNames = orderCommonNames(species?.commonNames)
-  // Always expose at least one display string (never empty array for UI)
-  const safeCommonNames =
-    commonNames.length > 0 ? commonNames : [scientificName]
+  const description = readOptionalString(plant.description)
+  const healthStatus = readOptionalString(plant.health_status)
+  const score = parseConfidenceFromHealthStatus(healthStatus)
+  const genus = scientificName.includes(' ')
+    ? scientificName.split(' ')[0] ?? null
+    : null
 
   return {
     scientificName,
-    scientificNameAuthorship: readOptionalString(
-      species?.scientificNameAuthorship,
-    ),
-    commonNames: safeCommonNames,
-    family: readTaxonName(species?.family),
-    genus: readTaxonName(species?.genus),
+    scientificNameAuthorship: null,
+    commonNames: [commonName],
+    family: null,
+    genus,
     score,
     confidencePercent: confidencePercent(score),
-    taxonId,
+    taxonId: null,
+    description,
+    healthStatus,
   }
 }
 
-function isPlantNetIdentifyResponse(
-  value: unknown,
-): value is PlantNetIdentifyResponse {
-  const record = asRecord(value)
-  if (!record) return false
-  // Accept payloads that look like identify responses (results and/or bestMatch).
-  return (
-    Array.isArray(record.results) ||
-    typeof record.bestMatch === 'string' ||
-    typeof record.remainingIdentificationRequests === 'number'
-  )
-}
-
-/**
- * Strict mapping of live Pl@ntNet `results` (API order preserved).
- * Top match fields come from `results[0]`.
- */
-function parsePlantNetPayload(
-  payload: PlantNetIdentifyResponse,
-  maxResults: number,
+function parseGeminiPayload(
+  payload: GeminiGenerateContentResponse,
 ): PlantIdentificationOutcome {
-  const rawResults: PlantNetResult[] = Array.isArray(payload.results)
-    ? payload.results
-    : []
+  if (payload.error?.message) {
+    return failure('API_ERROR', `فشل التعريف: ${payload.error.message}`)
+  }
 
-  const limit = Number.isFinite(maxResults)
-    ? Math.max(1, Math.floor(maxResults))
-    : DEFAULT_MAX_RESULTS
+  if (payload.promptFeedback?.blockReason) {
+    return failure(
+      'API_ERROR',
+      `تم حظر الطلب من Gemini (${payload.promptFeedback.blockReason}). جرّب صورة أخرى.`,
+    )
+  }
 
-  const candidates = rawResults
-    .map(mapCandidate)
-    .filter((item): item is PlantIdentificationCandidate => item !== null)
-    .slice(0, limit)
+  const text = extractGeminiText(payload)
+  if (!text) {
+    return failure(
+      'NO_RESULTS',
+      'تعذّر التعرف على النبات من الصورة. جرّب صورة أوضح بإضاءة جيدة.',
+    )
+  }
 
-  if (candidates.length === 0) {
-    return {
-      ok: false,
-      code: 'NO_RESULTS',
-      message:
-        'تعذّر التعرف على النبات من الصورة. جرّب صورة أوضح للورقة أو الزهرة بإضاءة جيدة.',
+  const plant = parseGeminiPlantJson(text)
+  if (!plant) {
+    console.error('[Gemini] could not parse plant JSON', text.slice(0, 400))
+    return failure(
+      'API_ERROR',
+      'استجابة غير صالحة من Gemini (تعذّر قراءة JSON).',
+    )
+  }
+
+  const candidate = mapGeminiPlantToCandidate(plant)
+  if (
+    !candidate.scientificName ||
+    candidate.scientificName === FALLBACK_SCIENTIFIC_NAME
+  ) {
+    if (!candidate.commonNames[0] || candidate.commonNames[0] === FALLBACK_COMMON_NAME) {
+      return failure(
+        'NO_RESULTS',
+        'تعذّر التعرف على النبات من الصورة. جرّب صورة أوضح بإضاءة جيدة.',
+      )
     }
   }
 
-  const primary = candidates[0]
-  const bestFromPayload = readOptionalString(payload?.bestMatch)
-  const bestMatch =
-    (bestFromPayload
-      ? extractBinomialScientificName(bestFromPayload) || bestFromPayload
-      : null) ||
-    primary?.scientificName ||
-    FALLBACK_SCIENTIFIC_NAME
-
   return {
     ok: true,
-    bestMatch,
-    candidates,
+    bestMatch: candidate.scientificName,
+    candidates: [candidate],
     identifiedAt: new Date().toISOString(),
   }
 }
 
-// ─── Internal: Arabic HTTP / network errors ──────────────────────────────────
+function isGeminiResponse(value: unknown): value is GeminiGenerateContentResponse {
+  const record = asRecord(value)
+  if (!record) return false
+  return (
+    Array.isArray(record.candidates) ||
+    asRecord(record.error) !== null ||
+    asRecord(record.promptFeedback) !== null
+  )
+}
+
+// ─── Internal: Arabic HTTP errors ────────────────────────────────────────────
 
 function failure(
   code: Extract<PlantIdentificationOutcome, { ok: false }>['code'],
@@ -352,21 +381,17 @@ function failure(
 function extractApiErrorText(rawBody: string): string {
   const trimmed = rawBody.trim()
   if (!trimmed) return ''
-
   try {
     const parsed: unknown = JSON.parse(trimmed)
     const record = asRecord(parsed)
-    if (record) {
-      const message =
-        readOptionalString(record.message) ||
-        readOptionalString(record.error) ||
-        readOptionalString(record.statusMessage)
+    const error = asRecord(record?.error)
+    if (error) {
+      const message = readOptionalString(error.message)
       if (message) return message.slice(0, 400)
     }
   } catch {
-    /* plain text body */
+    /* plain text */
   }
-
   return trimmed.slice(0, 400)
 }
 
@@ -379,38 +404,30 @@ async function messageForHttpError(response: Response): Promise<string> {
   }
 
   const detail = extractApiErrorText(rawBody)
-  const lower = detail.toLowerCase()
   const status = response.status
 
-  if (status === 401) {
+  if (status === 400) {
     return detail
-      ? `مفتاح Pl@ntNet غير صالح أو غير مصرّح (401): ${detail}`
-      : 'مفتاح Pl@ntNet غير صالح أو غير مصرّح (401). تحقق من المفتاح في لوحة my.plantnet.org.'
+      ? `طلب غير صالح إلى Gemini (400): ${detail}`
+      : 'طلب غير صالح إلى خدمة التعريف (400).'
   }
-
-  if (status === 403) {
-    if (lower.includes('origin') || lower.includes('cors')) {
-      return [
-        'رُفض الطلب بسبب CORS / النطاق (403).',
-        'فعّل Expose my API key وأضف نطاق GitHub Pages إلى Authorized domains.',
-        detail ? `التفاصيل: ${detail}` : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-    }
+  if (status === 401 || status === 403) {
     return detail
-      ? `الوصول مرفوض من Pl@ntNet (403): ${detail}`
-      : 'الوصول مرفوض من Pl@ntNet (403). تحقق من صلاحيات المفتاح والنطاقات المصرّح بها.'
+      ? `مفتاح Gemini مرفوض (${status}): ${detail}`
+      : `مفتاح Gemini غير صالح أو غير مصرّح (${status}).`
   }
-
+  if (status === 404) {
+    return detail
+      ? `نموذج Gemini غير متاح (404): ${detail}`
+      : 'نموذج gemini-1.5-flash غير متاح حالياً (404).'
+  }
   if (status === 429) {
     return 'تم تجاوز حد طلبات التعريف (429). حاول مرة أخرى لاحقاً.'
   }
-
   if (status >= 500) {
     return detail
       ? `خدمة التعريف غير متاحة حالياً (${status}): ${detail}`
-      : `خدمة التعريف غير متاحة حالياً (HTTP ${status}). حاول مرة أخرى بعد قليل.`
+      : `خدمة التعريف غير متاحة حالياً (HTTP ${status}).`
   }
 
   const statusLabel = response.statusText
@@ -425,15 +442,20 @@ async function messageForHttpError(response: Response): Promise<string> {
 // ─── Public: identify ────────────────────────────────────────────────────────
 
 /**
- * Identify a plant image via the official Pl@ntNet v2 API (direct browser fetch).
- *
- * - `FormData` with `images` + `organs` (no custom headers)
- * - `api-key` only as a query parameter on my-api.plantnet.org
+ * Identify a plant image via Google Gemini (`gemini-1.5-flash`).
+ * Sends base64 `inline_data` + structured JSON prompt; maps result to UI candidates.
  */
-export async function identifyPlantWithPlantNet(
+export async function identifyPlant(
   file: File,
-  options: IdentifyImageOptions = {},
+  _options: IdentifyImageOptions = {},
 ): Promise<PlantIdentificationOutcome> {
+  if (!isGeminiApiConfigured()) {
+    return failure(
+      'MISSING_API_KEY',
+      'مفتاح Gemini غير مُعدّ. أضف VITE_GEMINI_API_KEY إلى ملف .env أو إعدادات النشر.',
+    )
+  }
+
   try {
     validatePlantImage(file)
   } catch (error) {
@@ -455,7 +477,7 @@ export async function identifyPlantWithPlantNet(
       mimeType: 'image/jpeg',
     })
   } catch (error) {
-    console.error('[PlantNet] image compression failed', error)
+    console.error('[Gemini] image compression failed', error)
     return failure(
       'INVALID_FILE',
       'تعذّر ضغط الصورة قبل الإرسال. جرّب صورة أصغر أو بصيغة JPEG/PNG.',
@@ -469,32 +491,29 @@ export async function identifyPlantWithPlantNet(
     )
   }
 
-  const project =
-    typeof options.project === 'string' && options.project.trim()
-      ? options.project.trim()
-      : DEFAULT_PROJECT
+  let base64: string
+  try {
+    base64 = await fileToBase64(uploadFile)
+  } catch (error) {
+    console.error('[Gemini] base64 encode failed', error)
+    return failure('INVALID_FILE', 'تعذّر تحويل الصورة إلى Base64.')
+  }
 
-  const organ = resolveOrgans(options)?.[0] ?? 'auto'
-  const maxResults =
-    typeof options.maxResults === 'number' && Number.isFinite(options.maxResults)
-      ? options.maxResults
-      : DEFAULT_MAX_RESULTS
-
-  // e.g. https://my-api.plantnet.org/v2/identify/all?api-key=2b10d9WpUNeMmsuwvO7MLBaUu
-  const url = buildIdentifyUrl(project)
-  const formData = buildIdentifyFormData(uploadFile, organ)
+  const mimeType = resolveMimeType(uploadFile)
+  const url = buildGeminiUrl()
+  const body = buildGeminiRequestBody(base64, mimeType)
 
   let response: Response
   try {
-    // Direct POST — only method + FormData body.
-    // Do NOT set headers, mode, credentials, or Content-Type (browser sets
-    // multipart boundary automatically; custom headers trigger CORS preflight).
     response = await fetch(url, {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
     })
   } catch (error) {
-    console.error('[PlantNet] network failure', { url, error })
+    console.error('[Gemini] network failure', { error })
     return failure(
       'NETWORK',
       'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
@@ -503,10 +522,9 @@ export async function identifyPlantWithPlantNet(
 
   if (!response.ok) {
     const message = await messageForHttpError(response)
-    console.error('[PlantNet] HTTP error', {
+    console.error('[Gemini] HTTP error', {
       status: response.status,
       statusText: response.statusText,
-      url,
       message,
     })
     return failure('API_ERROR', message)
@@ -516,44 +534,35 @@ export async function identifyPlantWithPlantNet(
   try {
     rawJson = await response.json()
   } catch (error) {
-    console.error('[PlantNet] JSON parse failure', error)
+    console.error('[Gemini] JSON parse failure', error)
     return failure(
       'API_ERROR',
       'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
     )
   }
 
-  if (!isPlantNetIdentifyResponse(rawJson)) {
-    console.error('[PlantNet] unexpected JSON shape', rawJson)
-    return failure(
-      'API_ERROR',
-      'بنية استجابة غير متوقعة من خدمة التعريف.',
-    )
+  if (!isGeminiResponse(rawJson)) {
+    console.error('[Gemini] unexpected JSON shape', rawJson)
+    return failure('API_ERROR', 'بنية استجابة غير متوقعة من خدمة التعريف.')
   }
 
   try {
-    const outcome = parsePlantNetPayload(rawJson, maxResults)
+    const outcome = parseGeminiPayload(rawJson)
     if (outcome.ok) {
-      console.info('[PlantNet] top match', summarizePrimaryCandidate(outcome))
+      console.info('[Gemini] top match', summarizePrimaryCandidate(outcome))
     }
     return outcome
   } catch (error) {
-    console.error('[PlantNet] mapping failure', error)
-    return failure(
-      'UNKNOWN',
-      'حدث خطأ أثناء معالجة نتائج التعريف.',
-    )
+    console.error('[Gemini] mapping failure', error)
+    return failure('UNKNOWN', 'حدث خطأ أثناء معالجة نتائج التعريف.')
   }
 }
 
-/**
- * Validate + identify; throws ServiceError with Arabic message on failure.
- */
 export async function identifyPlantOrThrow(
   file: File,
   options?: IdentifyImageOptions,
 ): Promise<Extract<PlantIdentificationOutcome, { ok: true }>> {
-  const outcome = await identifyPlantWithPlantNet(file, options)
+  const outcome = await identifyPlant(file, options)
   if (!outcome.ok) {
     throw new ServiceError(outcome.message, outcome.code)
   }

@@ -16,7 +16,7 @@ import type {
 import type {
   IdentifyImageOptions,
   PlantIdentificationOutcome,
-} from '@/types/plantnet'
+} from '@/types/identification'
 import {
   extractBinomialScientificName,
   scientificNameQueryVariants,
@@ -240,7 +240,7 @@ export async function matchPlantByScientificName(
 }
 
 /**
- * Look up a plant by taxon_id (e.g. GBIF id from Pl@ntNet).
+ * Look up a plant by taxon_id when stored in the DB.
  */
 export async function matchPlantByTaxonId(
   taxonId: string,
@@ -273,12 +273,46 @@ export async function matchPlantByTaxonId(
 
 export interface MatchFromIdentificationInput {
   scientificName: string
+  commonNames?: string[]
   taxonId?: string | null
 }
 
 /**
- * Prefer taxon_id match, then fall back to scientific name.
+ * Match Gemini names against local plants (scientific / Arabic / English names).
  * Never fabricates plant / soil / environment / care data.
+ */
+export async function matchPlantByCommonOrArabicName(
+  name: string,
+): Promise<PlantMatchResult> {
+  const client = requireSupabase()
+  // Strip PostgREST filter metacharacters from free-text labels
+  const query = name
+    .trim()
+    .replace(/[%_,.()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!query) return emptyMatch()
+
+  const { data, error } = await client
+    .from('plants')
+    .select(PLANT_COLUMNS)
+    .or(
+      `arabic_name.ilike.%${query}%,scientific_name.ilike.%${query}%,category.ilike.%${query}%`,
+    )
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[plantMatching] common/arabic lookup:', error.message)
+    return emptyMatch()
+  }
+
+  if (!data) return emptyMatch()
+  return attachAssociations(data as DbPlantRow, 'scientific_name')
+}
+
+/**
+ * Prefer taxon_id, then scientific binomial, then Gemini common-name labels.
  */
 export async function matchPlantFromIdentification(
   input: MatchFromIdentificationInput,
@@ -294,7 +328,24 @@ export async function matchPlantFromIdentification(
 
   const scientific = input.scientificName?.trim() ?? ''
   if (scientific) {
-    return matchPlantByScientificName(scientific)
+    const byScientific = await matchPlantByScientificName(scientific)
+    if (byScientific.plant) {
+      return byScientific
+    }
+
+    const byLabel = await matchPlantByCommonOrArabicName(scientific)
+    if (byLabel.plant) {
+      return byLabel
+    }
+  }
+
+  for (const common of input.commonNames ?? []) {
+    const label = common?.trim()
+    if (!label) continue
+    const byCommon = await matchPlantByCommonOrArabicName(label)
+    if (byCommon.plant) {
+      return byCommon
+    }
   }
 
   return emptyMatch()
@@ -306,17 +357,18 @@ export interface IdentifyAndMatchResult {
 }
 
 /**
- * End-to-end: Pl@ntNet identify → Supabase environmental match for the top candidate.
+ * End-to-end: Gemini identify → Supabase environmental match for the top candidate.
  */
 export async function identifyAndMatchPlant(
   file: File,
   options?: IdentifyImageOptions,
 ): Promise<IdentifyAndMatchResult> {
   const identification = await identifyPlantOrThrow(file, options)
-  const top = identification.candidates[0]
+  const top = identification.candidates?.[0]
 
   const match = await matchPlantFromIdentification({
     scientificName: top?.scientificName ?? identification.bestMatch ?? '',
+    commonNames: top?.commonNames ?? [],
     taxonId: top?.taxonId ?? null,
   })
 

@@ -112,16 +112,22 @@ export function IdentifyResultPage() {
             </p>
           ) : null}
 
-          {plant?.description ? (
+          {plant?.description || top?.description ? (
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
-              {plant.description}
+              {plant?.description?.trim() || top?.description}
             </p>
           ) : (
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
-              تم التعرف على النبات عبر Pl@ntNet. لم تُعثر على سجل تفصيلي مطابق في
+              تم التعرف على النبات عبر Gemini. لم تُعثر على سجل تفصيلي مطابق في
               قاعدة البيانات المحلية بعد.
             </p>
           )}
+
+          {top?.healthStatus ? (
+            <p className="mt-2 text-xs text-muted dark:text-stone-400">
+              الحالة / الثقة: {top.healthStatus}
+            </p>
+          ) : null}
 
           <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
             <MetaTile

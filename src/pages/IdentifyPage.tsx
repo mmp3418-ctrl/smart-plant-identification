@@ -15,27 +15,17 @@ import { useCamera } from '@/hooks/useCamera'
 import { useAppData } from '@/context/AppDataContext'
 import {
   displayPlantCommonName,
-  identifyPlantWithPlantNet,
-  isPlantNetConfigured,
+  identifyPlant,
+  isGeminiApiConfigured,
   validatePlantImage,
 } from '@/services/plantIdentificationService'
 import { matchPlantFromIdentification } from '@/services/plantMatchingService'
 import { dataUrlToFile, fileToDataUrl } from '@/services/imageUtils'
 import { isServiceError } from '@/services/errors'
 import type { IdentifySessionResult } from '@/types/identifySession'
-import type { PlantNetOrgan } from '@/types/plantnet'
 import { cn } from '@/lib/cn'
 
 type Phase = 'ready' | 'preview' | 'analyzing' | 'error'
-
-const ORGAN_OPTIONS: Array<{ value: PlantNetOrgan; label: string }> = [
-  { value: 'auto', label: 'تلقائي' },
-  { value: 'leaf', label: 'ورقة' },
-  { value: 'flower', label: 'زهرة' },
-  { value: 'habit', label: 'شكل عام' },
-  { value: 'fruit', label: 'ثمرة' },
-  { value: 'bark', label: 'لحاء' },
-]
 
 export function IdentifyPage() {
   const [searchParams] = useSearchParams()
@@ -50,7 +40,6 @@ export function IdentifyPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [organ, setOrgan] = useState<PlantNetOrgan>('auto')
 
   const { start, stop } = camera
 
@@ -90,10 +79,10 @@ export function IdentifyPage() {
   async function analyze() {
     if (!preview) return
 
-    if (!isPlantNetConfigured()) {
+    if (!isGeminiApiConfigured()) {
       setPhase('error')
       setErrorMessage(
-        'تعذّر تهيئة مفتاح Pl@ntNet. أعد تحميل الصفحة أو تحقق من إعدادات المشروع.',
+        'تعذّر تهيئة مفتاح Gemini. أعد تحميل الصفحة أو تحقق من إعدادات المشروع.',
       )
       return
     }
@@ -106,8 +95,7 @@ export function IdentifyPage() {
         pendingFile ??
         (await dataUrlToFile(preview, `plant-${Date.now()}.jpg`))
 
-      const identification = await identifyPlantWithPlantNet(file, {
-        organ,
+      const identification = await identifyPlant(file, {
         maxResults: 5,
       })
 
@@ -123,6 +111,7 @@ export function IdentifyPage() {
         match = await matchPlantFromIdentification({
           scientificName:
             top?.scientificName ?? identification.bestMatch ?? '',
+          commonNames: top?.commonNames ?? [],
           taxonId: top?.taxonId ?? null,
         })
       } catch (error) {
@@ -227,7 +216,7 @@ export function IdentifyPage() {
     <div className="relative flex min-h-dvh flex-col bg-[#142D21] text-stone-100">
       {phase === 'analyzing' ? (
         <GreenLoadingOverlay
-          message="جارٍ تعريف النبات عبر Pl@ntNet…"
+          message="جارٍ تعريف النبات عبر Gemini…"
           zIndexClass="z-[95]"
         />
       ) : null}
@@ -349,35 +338,10 @@ export function IdentifyPage() {
 
         {/* Controls */}
         <div className="mt-5 space-y-3">
-          {phase !== 'analyzing' ? (
-            <div className="space-y-2">
-              <p className="text-center text-xs text-emerald-100/70">
-                نوع الجزء الظاهر في الصورة (يحسّن دقة Pl@ntNet)
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {ORGAN_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setOrgan(option.value)}
-                    className={cn(
-                      'rounded-full px-3 py-1.5 text-xs transition-colors',
-                      organ === option.value
-                        ? 'bg-emerald-300 text-emerald-950'
-                        : 'bg-white/10 text-emerald-100/80 hover:bg-white/15',
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           {phase === 'preview' && preview ? (
             <>
               <p className="text-center text-xs text-emerald-100/70">
-                راجع المعاينة ثم اضغط «تحليل الصورة» لإرسالها إلى Pl@ntNet
+                راجع المعاينة ثم اضغط «تحليل الصورة» لإرسالها إلى Gemini
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <Button

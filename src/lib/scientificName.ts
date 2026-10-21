@@ -55,7 +55,7 @@ export function normalizeScientificNameRaw(raw: string): string {
 }
 
 /**
- * Extract primary genus + species (binomial) from a Pl@ntNet / GBIF-style name.
+ * Extract primary genus + species (binomial) from a Latin / GBIF-style name.
  * Returns empty string when input is blank.
  */
 export function extractBinomialScientificName(raw: string): string {

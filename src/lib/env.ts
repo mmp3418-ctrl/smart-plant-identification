@@ -1,11 +1,7 @@
 /**
- * Vite inlines `import.meta.env.VITE_*` at build time.
- * Access must use static property names so values embed in the GH Pages bundle.
- *
- * When env vars are missing (common on GitHub Pages), we fall back to
- * `PUBLIC_RUNTIME_CONFIG` so identification keeps working.
+ * Vite inlines `import.meta.env.VITE_*` at build time from `.env` / CI secrets.
+ * Never hardcode API keys in source — use environment variables only.
  */
-import { PUBLIC_RUNTIME_CONFIG } from '@/config/publicRuntimeConfig'
 
 function normalizeEnvValue(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -27,52 +23,38 @@ function isPlaceholder(value: string): boolean {
   return (
     lower.includes('your-project') ||
     lower.includes('your-anon-key') ||
-    lower.includes('your-plantnet') ||
-    lower === 'your-plantnet-api-key' ||
+    lower.includes('your-gemini') ||
+    lower === 'your-gemini-api-key' ||
     lower.startsWith('your-')
   )
 }
 
-function resolveKey(envValue: unknown, fallback: string): string {
-  const fromEnv = normalizeEnvValue(envValue)
-  if (fromEnv && !isPlaceholder(fromEnv)) return fromEnv
-  return fallback
+function readEnv(value: unknown): string {
+  const normalized = normalizeEnvValue(value)
+  if (!normalized || isPlaceholder(normalized)) return ''
+  return normalized
 }
 
-/** Pl@ntNet API key — env first, then committed public fallback for GH Pages. */
-export function readPlantNetApiKey(): string {
-  return resolveKey(
-    import.meta.env.VITE_PLANTNET_API_KEY,
-    PUBLIC_RUNTIME_CONFIG.plantNetApiKey,
-  )
+/** Google Gemini API key from `VITE_GEMINI_API_KEY`. */
+export function readGeminiApiKey(): string {
+  return readEnv(import.meta.env.VITE_GEMINI_API_KEY)
 }
 
 export function readSupabaseUrl(): string {
-  return resolveKey(
-    import.meta.env.VITE_SUPABASE_URL,
-    PUBLIC_RUNTIME_CONFIG.supabaseUrl,
-  )
+  return readEnv(import.meta.env.VITE_SUPABASE_URL)
 }
 
 export function readSupabaseAnonKey(): string {
-  return resolveKey(
-    import.meta.env.VITE_SUPABASE_ANON_KEY,
-    PUBLIC_RUNTIME_CONFIG.supabaseAnonKey,
-  )
+  return readEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
 }
 
 export function isProdBuild(): boolean {
   return import.meta.env.PROD === true
 }
 
-/** Kept for rare misconfiguration paths — key should normally always resolve. */
 export function missingEnvArabicMessage(varName: string): string {
   if (isProdBuild()) {
-    return (
-      `${varName} غير متوفر. تحقق من إعدادات النشر أو أعد بناء المشروع.`
-    )
+    return `${varName} غير متوفر. أضفه كـ GitHub Actions secret ثم أعد النشر.`
   }
-  return (
-    `${varName} غير مُعدّ. أضفه إلى ملف .env ثم أعد تشغيل npm run dev.`
-  )
+  return `${varName} غير مُعدّ. أضفه إلى ملف .env ثم أعد تشغيل npm run dev.`
 }
