@@ -13,8 +13,19 @@ import { readGeminiApiKey } from '@/lib/env'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL = 'gemini-1.5-flash'
-const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+/**
+ * `gemini-1.5-flash` was shut down (Sep 2025) and returns
+ * "is not found for API version v1beta". Use current Flash models instead.
+ * @see https://ai.google.dev/gemini-api/docs/models
+ */
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+] as const
+
+const GEMINI_API_BASE =
+  'https://generativelanguage.googleapis.com/v1beta/models'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -150,16 +161,26 @@ function resolveMimeType(file: File): string {
   return 'image/jpeg'
 }
 
-function buildGeminiUrl(): string {
-  const url = new URL(GEMINI_GENERATE_URL)
+function buildGeminiUrl(model: string): string {
+  // Exact REST shape: …/v1beta/models/{model}:generateContent?key=…
+  const url = new URL(`${GEMINI_API_BASE}/${model}:generateContent`)
   url.searchParams.set('key', getGeminiApiKey())
   return url.toString()
 }
 
+/**
+ * Multimodal body per Gemini REST docs:
+ * parts = [ text prompt, { inline_data: { mime_type, data } } ]
+ */
 function buildGeminiRequestBody(
   base64Image: string,
   mimeType: string,
 ): Record<string, unknown> {
+  // Ensure pure base64 (no data-URL prefix / whitespace)
+  const data = base64Image
+    .replace(/^data:[^;]+;base64,/i, '')
+    .replace(/\s+/g, '')
+
   return {
     contents: [
       {
@@ -168,8 +189,8 @@ function buildGeminiRequestBody(
           { text: GEMINI_IDENTIFY_PROMPT },
           {
             inline_data: {
-              mime_type: mimeType,
-              data: base64Image,
+              mime_type: mimeType || 'image/jpeg',
+              data,
             },
           },
         ],
@@ -177,6 +198,8 @@ function buildGeminiRequestBody(
     ],
     generationConfig: {
       temperature: 0.2,
+      // REST examples use snake_case; camelCase is also accepted by many clients
+      response_mime_type: 'application/json',
       responseMimeType: 'application/json',
     },
   }
@@ -419,7 +442,7 @@ async function messageForHttpError(response: Response): Promise<string> {
   if (status === 404) {
     return detail
       ? `نموذج Gemini غير متاح (404): ${detail}`
-      : 'نموذج gemini-1.5-flash غير متاح حالياً (404).'
+      : 'نموذج Gemini غير متاح حالياً (404).'
   }
   if (status === 429) {
     return 'تم تجاوز حد طلبات التعريف (429). حاول مرة أخرى لاحقاً.'
@@ -442,7 +465,7 @@ async function messageForHttpError(response: Response): Promise<string> {
 // ─── Public: identify ────────────────────────────────────────────────────────
 
 /**
- * Identify a plant image via Google Gemini (`gemini-1.5-flash`).
+ * Identify a plant image via Google Gemini Flash (`gemini-2.5-flash`, with fallbacks).
  * Sends base64 `inline_data` + structured JSON prompt; maps result to UI candidates.
  */
 export async function identifyPlant(
@@ -500,62 +523,88 @@ export async function identifyPlant(
   }
 
   const mimeType = resolveMimeType(uploadFile)
-  const url = buildGeminiUrl()
   const body = buildGeminiRequestBody(base64, mimeType)
+  const bodyJson = JSON.stringify(body)
 
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-  } catch (error) {
-    console.error('[Gemini] network failure', { error })
-    return failure(
-      'NETWORK',
-      'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
-    )
-  }
+  let lastHttpError: PlantIdentificationOutcome | null = null
 
-  if (!response.ok) {
-    const message = await messageForHttpError(response)
-    console.error('[Gemini] HTTP error', {
-      status: response.status,
-      statusText: response.statusText,
-      message,
-    })
-    return failure('API_ERROR', message)
-  }
+  for (const model of GEMINI_MODELS) {
+    const url = buildGeminiUrl(model)
 
-  let rawJson: unknown
-  try {
-    rawJson = await response.json()
-  } catch (error) {
-    console.error('[Gemini] JSON parse failure', error)
-    return failure(
-      'API_ERROR',
-      'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
-    )
-  }
-
-  if (!isGeminiResponse(rawJson)) {
-    console.error('[Gemini] unexpected JSON shape', rawJson)
-    return failure('API_ERROR', 'بنية استجابة غير متوقعة من خدمة التعريف.')
-  }
-
-  try {
-    const outcome = parseGeminiPayload(rawJson)
-    if (outcome.ok) {
-      console.info('[Gemini] top match', summarizePrimaryCandidate(outcome))
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: bodyJson,
+      })
+    } catch (error) {
+      console.error('[Gemini] network failure', { model, error })
+      return failure(
+        'NETWORK',
+        'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
+      )
     }
-    return outcome
-  } catch (error) {
-    console.error('[Gemini] mapping failure', error)
-    return failure('UNKNOWN', 'حدث خطأ أثناء معالجة نتائج التعريف.')
+
+    // Model retired / not found → try next supported Flash identifier
+    if (response.status === 404) {
+      const message = await messageForHttpError(response)
+      console.warn('[Gemini] model not found, trying next', { model, message })
+      lastHttpError = failure('API_ERROR', message)
+      continue
+    }
+
+    if (!response.ok) {
+      const message = await messageForHttpError(response)
+      console.error('[Gemini] HTTP error', {
+        model,
+        status: response.status,
+        statusText: response.statusText,
+        message,
+      })
+      return failure('API_ERROR', message)
+    }
+
+    let rawJson: unknown
+    try {
+      rawJson = await response.json()
+    } catch (error) {
+      console.error('[Gemini] JSON parse failure', { model, error })
+      return failure(
+        'API_ERROR',
+        'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
+      )
+    }
+
+    if (!isGeminiResponse(rawJson)) {
+      console.error('[Gemini] unexpected JSON shape', { model, rawJson })
+      return failure('API_ERROR', 'بنية استجابة غير متوقعة من خدمة التعريف.')
+    }
+
+    try {
+      const outcome = parseGeminiPayload(rawJson)
+      if (outcome.ok) {
+        console.info('[Gemini] top match', {
+          model,
+          summary: summarizePrimaryCandidate(outcome),
+        })
+      }
+      return outcome
+    } catch (error) {
+      console.error('[Gemini] mapping failure', { model, error })
+      return failure('UNKNOWN', 'حدث خطأ أثناء معالجة نتائج التعريف.')
+    }
   }
+
+  return (
+    lastHttpError ??
+    failure(
+      'API_ERROR',
+      'لم يُعثر على نموذج Gemini مدعوم (تمت تجربة gemini-2.5-flash وغيره).',
+    )
+  )
 }
 
 export async function identifyPlantOrThrow(
