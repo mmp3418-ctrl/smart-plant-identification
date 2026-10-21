@@ -46,26 +46,56 @@ export function IdentifyResultPage() {
     ? (top.confidencePercent ?? confidencePercent(top.score ?? 0))
     : 0
 
+  const pickText = (...values: Array<string | null | undefined>): string | null => {
+    for (const value of values) {
+      const trimmed = value?.trim()
+      if (trimmed && trimmed !== 'نبات غير محدد' && trimmed !== '—') {
+        return trimmed
+      }
+    }
+    return null
+  }
+
+  // Prefer Gemini candidate fields, then local DB enrichment when present
   const displayArabic =
-    plant?.arabic_name?.trim() ||
-    top?.commonNames?.[0]?.trim() ||
-    displayPlantCommonName(top, bestMatch)
+    pickText(
+      top?.commonNames?.[0],
+      plant?.arabic_name,
+      displayPlantCommonName(top, bestMatch),
+    ) || 'نبات غير محدد'
+
   const displayScientific =
-    plant?.scientific_name?.trim() ||
-    top?.scientificName?.trim() ||
-    bestMatch?.trim() ||
-    '—'
+    pickText(
+      top?.scientificName,
+      plant?.scientific_name,
+      bestMatch,
+    ) || '—'
 
   const wateringValue =
-    plant?.watering?.trim() || top?.watering?.trim() || '—'
+    pickText(top?.watering, plant?.watering) || '—'
   const lightValue =
-    plant?.sunlight?.trim() || top?.light?.trim() || '—'
+    pickText(top?.light, plant?.sunlight) || '—'
   const temperatureValue =
-    plant?.temperature_range?.trim() ||
-    top?.temperature?.trim() ||
-    '—'
+    pickText(top?.temperature, plant?.temperature_range) || '—'
   const descriptionValue =
-    plant?.description?.trim() || top?.description?.trim() || null
+    pickText(top?.description, plant?.description)
+
+  const geminiCareSteps = [
+    wateringValue !== '—'
+      ? { id: 'gemini-water', label: 'الري', text: wateringValue }
+      : null,
+    lightValue !== '—'
+      ? { id: 'gemini-light', label: 'الإضاءة', text: lightValue }
+      : null,
+    temperatureValue !== '—'
+      ? { id: 'gemini-temp', label: 'الحرارة', text: temperatureValue }
+      : null,
+    descriptionValue
+      ? { id: 'gemini-desc', label: 'العناية', text: descriptionValue }
+      : null,
+  ].filter((step): step is { id: string; label: string; text: string } =>
+    Boolean(step),
+  )
 
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
@@ -218,15 +248,20 @@ export function IdentifyResultPage() {
         </Card>
       </div>
 
-      {/* Care guides */}
+      {/* Care guides — DB steps first, else Gemini care fields */}
       <Card className="mt-4" glass padding="lg">
-        <CardHeader title="دليل العناية" />
+        <CardHeader
+          title="دليل العناية"
+          description={
+            match.careGuides.length > 0
+              ? 'من قاعدة البيانات المحلية'
+              : geminiCareSteps.length > 0
+                ? 'مستخلص من نتيجة التعريف'
+                : undefined
+          }
+        />
         <CardContent>
-          {match.careGuides.length === 0 ? (
-            <p className="text-sm text-muted dark:text-stone-400">
-              لا توجد تعليمات عناية محفوظة لهذا النبات في قاعدة البيانات.
-            </p>
-          ) : (
+          {match.careGuides.length > 0 ? (
             <ol className="space-y-2.5">
               {match.careGuides.map((step, index) => (
                 <li
@@ -240,6 +275,29 @@ export function IdentifyResultPage() {
                 </li>
               ))}
             </ol>
+          ) : geminiCareSteps.length > 0 ? (
+            <ol className="space-y-2.5">
+              {geminiCareSteps.map((step, index) => (
+                <li
+                  key={step.id}
+                  className="flex gap-3 text-sm leading-relaxed text-muted dark:text-stone-300"
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand dark:text-emerald-300">
+                    {index + 1}
+                  </span>
+                  <span>
+                    <span className="font-semibold text-ink dark:text-stone-100">
+                      {step.label}:{' '}
+                    </span>
+                    {step.text}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted dark:text-stone-400">
+              لا تتوفر تعليمات عناية لهذا النبات حالياً.
+            </p>
           )}
         </CardContent>
       </Card>

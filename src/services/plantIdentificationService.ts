@@ -180,7 +180,7 @@ function cleanBase64(base64Image: string): string {
     .replace(/\s+/g, '')
 }
 
-// ─── Internal: JSON parsing (markdown-safe) ──────────────────────────────────
+// ─── Internal: JSON parsing (markdown-safe, schema-tolerant) ─────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -189,10 +189,57 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return null
 }
 
+/** Coerce Gemini values (string | number | array | shallow object) to text. */
+function coerceToText(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => coerceToText(item))
+      .filter((item): item is string => Boolean(item))
+    return parts.length > 0 ? parts.join('، ') : null
+  }
+
+  const record = asRecord(value)
+  if (record) {
+    // Prefer known text-ish nested keys inside care objects
+    for (const key of [
+      'text',
+      'value',
+      'label',
+      'ar',
+      'arabic',
+      'description',
+      'info',
+      'detail',
+      'details',
+      'instruction',
+      'note',
+    ]) {
+      const nested = coerceToText(record[key])
+      if (nested) return nested
+    }
+
+    const parts = Object.values(record)
+      .map((item) => coerceToText(item))
+      .filter((item): item is string => Boolean(item))
+    return parts.length > 0 ? parts.join(' — ') : null
+  }
+
+  return null
+}
+
 function readOptionalString(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
+  return coerceToText(value)
 }
 
 function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
@@ -231,81 +278,367 @@ function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
   return 0.7
 }
 
-/** Strip ``` / ```json fences and isolate the first JSON object. */
-function cleanJsonText(raw: string): string {
-  let text = raw.trim()
-  // Remove BOM / zero-width chars Gemini sometimes emits
-  text = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '')
-
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) {
-    text = fenced[1].trim()
-  } else if (text.startsWith('```')) {
-    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-  }
-
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start !== -1 && end !== -1 && end > start) {
-    return text.slice(start, end + 1)
-  }
-  return text
+/** Normalize object keys for case / punctuation / Arabic-insensitive lookup. */
+function normalizeKey(key: string): string {
+  return key
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-./\\]+/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
-function firstString(
+const FIELD_ALIASES = {
+  name: [
+    'name',
+    'commonname',
+    'common_name',
+    'arabicname',
+    'arabic_name',
+    'plantname',
+    'plant_name',
+    'displayname',
+    'title',
+    'الاسم',
+    'اسم',
+    'الاسمالشائع',
+    'اسمالنبات',
+  ],
+  scientificName: [
+    'scientificname',
+    'scientific_name',
+    'latinname',
+    'latin_name',
+    'binomial',
+    'species',
+    'taxonomy',
+    'الاسمالعلمي',
+    'الاسماللاتيني',
+  ],
+  watering: [
+    'watering',
+    'water',
+    'waterneeds',
+    'irrigation',
+    'الري',
+    'احتياجاتالري',
+    'ماء',
+  ],
+  light: [
+    'light',
+    'sunlight',
+    'lighting',
+    'sun',
+    'lightneeds',
+    'الإضاءة',
+    'الاضاءة',
+    'الشمس',
+    'ضوء',
+  ],
+  temperature: [
+    'temperature',
+    'temp',
+    'temperaturerange',
+    'temperature_range',
+    'heat',
+    'الحرارة',
+    'درجةالحرارة',
+  ],
+  description: [
+    'description',
+    'desc',
+    'summary',
+    'about',
+    'overview',
+    'details',
+    'care',
+    'careguide',
+    'care_guide',
+    'الوصف',
+    'وصف',
+    'العناية',
+  ],
+  healthStatus: [
+    'healthstatus',
+    'health_status',
+    'confidence',
+    'certainty',
+    'score',
+    'الثقة',
+    'الحالة',
+  ],
+} as const
+
+type PlantField = keyof typeof FIELD_ALIASES
+
+function buildNormalizedMap(
   record: Record<string, unknown>,
-  keys: string[],
+): Map<string, unknown> {
+  const map = new Map<string, unknown>()
+  for (const [key, value] of Object.entries(record)) {
+    const normalized = normalizeKey(key)
+    if (!normalized) continue
+    // Prefer first non-empty text-ish value if duplicates exist
+    if (!map.has(normalized) || coerceToText(map.get(normalized)) === null) {
+      map.set(normalized, value)
+    }
+  }
+  return map
+}
+
+function lookupField(
+  map: Map<string, unknown>,
+  field: PlantField,
 ): string | null {
-  for (const key of keys) {
-    const value = readOptionalString(record[key])
+  for (const alias of FIELD_ALIASES[field]) {
+    const value = coerceToText(map.get(normalizeKey(alias)))
     if (value) return value
   }
   return null
 }
 
-function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
-  try {
-    const cleaned = cleanJsonText(rawText)
-    const parsed: unknown = JSON.parse(cleaned)
-    const record = asRecord(parsed)
-    if (!record) return null
+/** Containers Gemini often wraps the plant object in. */
+const WRAPPER_KEYS = new Set(
+  [
+    'plant',
+    'data',
+    'result',
+    'results',
+    'response',
+    'payload',
+    'identification',
+    'identifiedplant',
+    'identified_plant',
+    'species',
+    'info',
+    'details',
+    'output',
+    'analysis',
+    'prediction',
+  ].map(normalizeKey),
+)
 
-    return {
-      name:
-        firstString(record, ['name', 'common_name', 'commonName', 'arabic_name']) ??
-        undefined,
-      scientificName:
-        firstString(record, [
-          'scientificName',
-          'scientific_name',
-          'latin_name',
-          'latinName',
-        ]) ?? undefined,
-      watering:
-        firstString(record, ['watering', 'water', 'الري']) ?? undefined,
-      light:
-        firstString(record, ['light', 'sunlight', 'lighting', 'الإضاءة']) ??
-        undefined,
-      temperature:
-        firstString(record, [
-          'temperature',
-          'temp',
-          'الحرارة',
-          'care_difficulty',
-        ]) ?? undefined,
-      description:
-        firstString(record, ['description', 'desc', 'الوصف']) ?? undefined,
-      health_status:
-        firstString(record, ['health_status', 'healthStatus', 'confidence']) ??
-        undefined,
+const CARE_WRAPPER_KEYS = new Set(
+  [
+    'care',
+    'careinfo',
+    'care_info',
+    'careguide',
+    'care_guide',
+    'careinstructions',
+    'needs',
+    'requirements',
+    'العناية',
+  ].map(normalizeKey),
+)
+
+function unwrapPlantRecord(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 4) return null
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = unwrapPlantRecord(item, depth + 1)
+      if (found) return found
     }
-  } catch (error) {
-    console.warn('[Gemini] JSON parse failed', {
-      error,
-      preview: rawText.slice(0, 400),
-    })
     return null
   }
+
+  const record = asRecord(value)
+  if (!record) return null
+
+  const map = buildNormalizedMap(record)
+  const hasDirectName =
+    lookupField(map, 'name') || lookupField(map, 'scientificName')
+  if (hasDirectName) return record
+
+  for (const [key, nested] of Object.entries(record)) {
+    if (!WRAPPER_KEYS.has(normalizeKey(key))) continue
+    const found = unwrapPlantRecord(nested, depth + 1)
+    if (found) return found
+  }
+
+  return record
+}
+
+/** Strip ``` / ```json fences and isolate the first JSON object/array. */
+function cleanJsonText(raw: string): string {
+  let text = raw.trim()
+  text = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '')
+
+  // Smart quotes → standard quotes
+  text = text.replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'")
+
+  const fenced = text.match(/```(?:json|javascript|js)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    text = fenced[1].trim()
+  } else if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json|javascript|js)?\s*/i, '').replace(/\s*```$/i, '')
+  }
+
+  const objStart = text.indexOf('{')
+  const arrStart = text.indexOf('[')
+  const start =
+    objStart === -1
+      ? arrStart
+      : arrStart === -1
+        ? objStart
+        : Math.min(objStart, arrStart)
+
+  if (start === -1) return text
+
+  const opener = text[start]
+  const closer = opener === '[' ? ']' : '}'
+  const end = text.lastIndexOf(closer)
+  if (end > start) {
+    return text.slice(start, end + 1)
+  }
+  return text.slice(start)
+}
+
+/** Soft-repair common Gemini JSON issues (trailing commas, JS-style quotes). */
+function softRepairJson(text: string): string {
+  return (
+    text
+      // trailing commas before } or ]
+      .replace(/,\s*([}\]])/g, '$1')
+      // single-quoted keys → double-quoted
+      .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
+      // single-quoted string values → double-quoted
+      .replace(/(:\s*)'([^']*)'/g, '$1"$2"')
+  )
+}
+
+function tryParseJson(raw: string): unknown | null {
+  const cleaned = cleanJsonText(raw)
+  const attempts = [cleaned, softRepairJson(cleaned)]
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt)
+    } catch {
+      // continue
+    }
+  }
+  return null
+}
+
+/**
+ * Last-resort: pull quoted key/value pairs with a regex when JSON.parse fails.
+ * Handles markdown wrappers and slightly broken JSON.
+ */
+function extractFieldsViaRegex(raw: string): GeminiPlantJson | null {
+  const text = cleanJsonText(raw)
+  const found: Record<string, string> = {}
+
+  const pairRe =
+    /["']([^"']+)["']\s*:\s*(?:["']([^"']*)["']|([^,}\]\n]+))/g
+
+  let match: RegExpExecArray | null
+  while ((match = pairRe.exec(text)) !== null) {
+    const key = normalizeKey(match[1] ?? '')
+    const value = (match[2] ?? match[3] ?? '').trim().replace(/^["']|["']$/g, '')
+    if (!key || !value || value === 'null' || value === 'undefined') continue
+    if (!found[key]) found[key] = value
+  }
+
+  if (Object.keys(found).length === 0) return null
+
+  const map = new Map<string, unknown>(Object.entries(found))
+  const plant: GeminiPlantJson = {
+    name: lookupField(map, 'name') ?? undefined,
+    scientificName: lookupField(map, 'scientificName') ?? undefined,
+    watering: lookupField(map, 'watering') ?? undefined,
+    light: lookupField(map, 'light') ?? undefined,
+    temperature: lookupField(map, 'temperature') ?? undefined,
+    description: lookupField(map, 'description') ?? undefined,
+    health_status: lookupField(map, 'healthStatus') ?? undefined,
+  }
+
+  if (
+    !plant.name &&
+    !plant.scientificName &&
+    !plant.watering &&
+    !plant.light &&
+    !plant.temperature &&
+    !plant.description
+  ) {
+    return null
+  }
+
+  return plant
+}
+
+function mergeCareWrapper(
+  plantRecord: Record<string, unknown>,
+): Map<string, unknown> {
+  const map = buildNormalizedMap(plantRecord)
+
+  for (const [key, value] of Object.entries(plantRecord)) {
+    if (!CARE_WRAPPER_KEYS.has(normalizeKey(key))) continue
+    const careRecord = asRecord(value)
+    if (!careRecord) {
+      // Sometimes "care" is a single description string
+      const careText = coerceToText(value)
+      if (careText && !map.has(normalizeKey('description'))) {
+        map.set(normalizeKey('description'), careText)
+      }
+      continue
+    }
+    for (const [careKey, careValue] of Object.entries(careRecord)) {
+      const normalized = normalizeKey(careKey)
+      if (!map.has(normalized) || coerceToText(map.get(normalized)) === null) {
+        map.set(normalized, careValue)
+      }
+    }
+  }
+
+  return map
+}
+
+function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
+  const parsed = tryParseJson(rawText)
+
+  if (parsed !== null) {
+    const plantRecord = unwrapPlantRecord(parsed)
+    if (plantRecord) {
+      const map = mergeCareWrapper(plantRecord)
+      const plant: GeminiPlantJson = {
+        name: lookupField(map, 'name') ?? undefined,
+        scientificName: lookupField(map, 'scientificName') ?? undefined,
+        watering: lookupField(map, 'watering') ?? undefined,
+        light: lookupField(map, 'light') ?? undefined,
+        temperature: lookupField(map, 'temperature') ?? undefined,
+        description: lookupField(map, 'description') ?? undefined,
+        health_status: lookupField(map, 'healthStatus') ?? undefined,
+        common_name: lookupField(map, 'name') ?? undefined,
+        scientific_name: lookupField(map, 'scientificName') ?? undefined,
+      }
+
+      if (
+        plant.name ||
+        plant.scientificName ||
+        plant.watering ||
+        plant.light ||
+        plant.temperature ||
+        plant.description
+      ) {
+        return plant
+      }
+    }
+  }
+
+  const regexFallback = extractFieldsViaRegex(rawText)
+  if (regexFallback) {
+    console.warn('[Gemini] used regex fallback parser', {
+      preview: rawText.slice(0, 300),
+    })
+    return regexFallback
+  }
+
+  console.warn('[Gemini] JSON parse failed', {
+    preview: rawText.slice(0, 400),
+  })
+  return null
 }
 
 function mapGeminiPlantToCandidate(
@@ -319,10 +652,14 @@ function mapGeminiPlantToCandidate(
   const rawScientific =
     readOptionalString(plant.scientificName) ||
     readOptionalString(plant.scientific_name) ||
-    commonName
+    ''
 
+  // Keep Latin binomial when possible; never wipe a usable scientific string
+  const binomial = rawScientific
+    ? extractBinomialScientificName(rawScientific)
+    : ''
   const scientificName =
-    extractBinomialScientificName(rawScientific) || rawScientific
+    binomial || rawScientific || (commonName !== FALLBACK_COMMON_NAME ? commonName : FALLBACK_SCIENTIFIC_NAME)
 
   const description = readOptionalString(plant.description)
   const watering = readOptionalString(plant.watering)
@@ -330,9 +667,12 @@ function mapGeminiPlantToCandidate(
   const temperature = readOptionalString(plant.temperature)
   const healthStatus = readOptionalString(plant.health_status)
   const score = parseConfidenceFromHealthStatus(healthStatus) || 0.82
-  const genus = scientificName.includes(' ')
-    ? scientificName.split(' ')[0] ?? null
-    : null
+  const genus =
+    scientificName &&
+    scientificName !== FALLBACK_SCIENTIFIC_NAME &&
+    /^[A-Za-z]/.test(scientificName)
+      ? scientificName.split(/\s+/)[0] ?? null
+      : null
 
   return {
     scientificName,
@@ -371,7 +711,6 @@ function outcomeFromGeminiText(text: string): PlantIdentificationOutcome | null 
     (displayName.length > 0 && displayName !== FALLBACK_COMMON_NAME) ||
     (scientific.length > 0 && scientific !== FALLBACK_SCIENTIFIC_NAME)
 
-  // Accept any non-empty care/description payload even if names are weak
   const hasCarePayload = Boolean(
     candidate.description ||
       candidate.watering ||
@@ -380,6 +719,15 @@ function outcomeFromGeminiText(text: string): PlantIdentificationOutcome | null 
   )
 
   if (!hasRealName && !hasCarePayload) return null
+
+  console.info('[Gemini] mapped plant fields', {
+    name: displayName,
+    scientificName: scientific,
+    watering: candidate.watering,
+    light: candidate.light,
+    temperature: candidate.temperature,
+    hasDescription: Boolean(candidate.description),
+  })
 
   return {
     ok: true,
