@@ -5,7 +5,6 @@ import {
   type ResponseSchema,
 } from '@google/generative-ai'
 import type {
-  GeminiPlantJson,
   IdentifyImageOptions,
   PlantIdentificationCandidate,
   PlantIdentificationOutcome,
@@ -17,14 +16,11 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/**
- * Model waterfall (official `@google/generative-ai` SDK):
- * 1) gemini-2.0-flash  2) gemini-1.5-flash on overload / failure
- */
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'] as const
+/** Primary model for real vision analysis — no mock data path. */
+const GEMINI_MODEL = 'gemini-1.5-flash'
 
-const MAX_ATTEMPTS_PER_MODEL = 2
-const RETRY_DELAY_MS = 1000
+const MAX_ATTEMPTS = 2
+const RETRY_DELAY_MS = 1200
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -37,61 +33,40 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const ARABIC_SCRIPT = /[\u0600-\u06FF]/
 
-const SYSTEM_INSTRUCTION = `أنت خبير نباتات محترف. مهمتك الوحيدة هي تحليل صورة النبات وإرجاع كائن JSON صارم.
-لا تكتب Markdown ولا \`\`\`json ولا أي نص خارج JSON.
-كل القيم النصية يجب أن تكون بالعربية الفصحى الواضحة ما عدا scientificName (لاتيني).
-لا تترك أي حقل فارغاً — إن لم تكن متأكداً تماماً أعطِ أفضل تقدير واقعي.`
+const NON_PLANT_MESSAGE =
+  'الصورة المرفوعة ليست نباتاً. يرجى رفع صورة نبات أو ورقة شجر واضحة.'
 
-const USER_IDENTIFY_PROMPT = `حلّل صورة النبات أو الزهرة التالية وأعد كائن JSON بالمفاتيح التالية بالضبط:
+const SYSTEM_INSTRUCTION = `You are a botanical vision expert.
+Analyze the provided image carefully.
+First decide whether the image shows a plant, flower, tree, or plant leaf.
+Respond with valid JSON only — no markdown, no code fences, no extra text.
+All plant care text values must be in Arabic. scientificName must be Latin.`
 
-{
-  "name": "اسم النبات الشائع بالعربية",
-  "scientificName": "الاسم العلمي اللاتيني Genus species بدون المؤلف",
-  "confidence": 85,
-  "watering": "طريقة الري وتفاصيلها بالعربية",
-  "light": "متطلبات الإضاءة بالعربية",
-  "temperature": "درجة الحرارة المناسبة بالعربية",
-  "description": "وصف تفصيلي للنبات بالعربية",
-  "soil": "نوع التربة المناسبة بالعربية",
-  "environment": "البيئة المناسبة بالعربية",
-  "careGuide": "دليل العناية الشامل بالعربية"
-}
+const USER_PROMPT = `Analyze the provided image. First, determine if it contains a plant, flower, tree, or plant leaf.
 
-confidence رقم صحيح من 0 إلى 100.`
+- IF IT IS NOT A PLANT (e.g. a watch, car, animal, human): Return JSON exactly like:
+{"isPlant": false, "message": "الصورة المرفوعة ليست نباتاً. يرجى رفع صورة نبات أو ورقة شجر واضحة."}
 
-/** Forced structured output schema for Gemini JSON mode. */
+- IF IT IS A PLANT: Return JSON exactly like:
+{"isPlant": true, "name": "اسم النبات", "scientificName": "الاسم العلمي", "confidence": 90, "watering": "تفاصيل الري الخاصة بهذا النبات بعينه", "light": "متطلبات الإضاءة الخاصة به", "temperature": "درجة الحرارة المناسبة", "description": "وصف دقيق وخاص بسبل العناية بهذا النبات"}
+
+confidence is an integer from 0 to 100.
+Never invent a plant when the image is not a plant.`
+
 const PLANT_RESPONSE_SCHEMA: ResponseSchema = {
   type: SchemaType.OBJECT,
   properties: {
-    name: { type: SchemaType.STRING, description: 'Common Arabic plant name' },
-    scientificName: {
-      type: SchemaType.STRING,
-      description: 'Latin binomial scientific name',
-    },
-    confidence: {
-      type: SchemaType.NUMBER,
-      description: 'Identification confidence 0-100',
-    },
+    isPlant: { type: SchemaType.BOOLEAN },
+    message: { type: SchemaType.STRING },
+    name: { type: SchemaType.STRING },
+    scientificName: { type: SchemaType.STRING },
+    confidence: { type: SchemaType.NUMBER },
     watering: { type: SchemaType.STRING },
     light: { type: SchemaType.STRING },
     temperature: { type: SchemaType.STRING },
     description: { type: SchemaType.STRING },
-    soil: { type: SchemaType.STRING },
-    environment: { type: SchemaType.STRING },
-    careGuide: { type: SchemaType.STRING },
   },
-  required: [
-    'name',
-    'scientificName',
-    'confidence',
-    'watering',
-    'light',
-    'temperature',
-    'description',
-    'soil',
-    'environment',
-    'careGuide',
-  ],
+  required: ['isPlant'],
 }
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
@@ -155,7 +130,6 @@ export function displayPlantCommonName(
 
 export function confidencePercent(score: number): number {
   if (!Number.isFinite(score)) return 0
-  // Accept either 0–1 or 0–100 inputs
   if (score > 1) return Math.round(Math.min(Math.max(score, 0), 100))
   return Math.round(Math.min(Math.max(score, 0), 1) * 100)
 }
@@ -169,38 +143,35 @@ export function summarizePrimaryCandidate(
     primary?.commonNames?.[0]?.trim() ||
     primary?.scientificName?.trim() ||
     outcome.bestMatch?.trim() ||
-    'نتيجة التعريف'
+    ''
   const scientificName =
-    primary?.scientificName?.trim() ||
-    outcome.bestMatch?.trim() ||
-    name
+    primary?.scientificName?.trim() || outcome.bestMatch?.trim() || name
   const commonNames =
     primary?.commonNames && primary.commonNames.length > 0
       ? primary.commonNames
-      : [name]
-  const commonArabicNames = commonNames.filter((n) => ARABIC_SCRIPT.test(n ?? ''))
+      : name
+        ? [name]
+        : []
   const score = primary?.score ?? 0
 
   return {
     name,
     scientificName,
     commonNames,
-    commonArabicNames,
+    commonArabicNames: commonNames.filter((n) => ARABIC_SCRIPT.test(n ?? '')),
     family: primary?.family ?? null,
     confidencePercent: primary?.confidencePercent ?? confidencePercent(score),
     score,
-    description: primary?.description ?? '',
-    watering: primary?.watering ?? '',
-    light: primary?.light ?? '',
-    temperature: primary?.temperature ?? '',
-    soil: primary?.soil ?? '',
-    environment: primary?.environment ?? '',
-    careGuide: primary?.careGuide ?? '',
-    healthStatus: primary?.healthStatus ?? null,
+    description: primary?.description ?? null,
+    watering: primary?.watering ?? null,
+    light: primary?.light ?? null,
+    temperature: primary?.temperature ?? null,
+    isPlant: outcome.isPlant,
+    message: outcome.message,
   }
 }
 
-// ─── Internal: image helpers ─────────────────────────────────────────────────
+// ─── Image helpers ───────────────────────────────────────────────────────────
 
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
@@ -229,7 +200,7 @@ function cleanBase64(base64Image: string): string {
     .replace(/\s+/g, '')
 }
 
-// ─── Internal: robust JSON extraction ────────────────────────────────────────
+// ─── JSON parsing (no hardcoded plant content) ───────────────────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -239,53 +210,23 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function coerceToText(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-
   if (typeof value === 'string') {
     const trimmed = value.trim()
     return trimmed.length > 0 ? trimmed : null
   }
-
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value)
   }
-
   if (Array.isArray(value)) {
     const parts = value
       .map((item) => coerceToText(item))
       .filter((item): item is string => Boolean(item))
     return parts.length > 0 ? parts.join('، ') : null
   }
-
-  const record = asRecord(value)
-  if (record) {
-    for (const key of [
-      'text',
-      'value',
-      'label',
-      'ar',
-      'arabic',
-      'description',
-      'info',
-      'detail',
-      'details',
-      'instruction',
-      'note',
-      'steps',
-    ]) {
-      const nested = coerceToText(record[key])
-      if (nested) return nested
-    }
-    const parts = Object.values(record)
-      .map((item) => coerceToText(item))
-      .filter((item): item is string => Boolean(item))
-    return parts.length > 0 ? parts.join(' — ') : null
-  }
-
   return null
 }
 
-function coerceConfidence(value: unknown): number | null {
+function coerceConfidence(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value <= 1) return Math.round(value * 100)
     return Math.round(Math.min(Math.max(value, 0), 100))
@@ -297,7 +238,7 @@ function coerceConfidence(value: unknown): number | null {
       if (Number.isFinite(pct)) return Math.min(Math.max(pct, 0), 100)
     }
   }
-  return null
+  return 70
 }
 
 function normalizeKey(key: string): string {
@@ -309,191 +250,27 @@ function normalizeKey(key: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
-const FIELD_ALIASES = {
-  name: [
-    'name',
-    'commonname',
-    'common_name',
-    'arabicname',
-    'plantname',
-    'displayname',
-    'title',
-    'الاسم',
-    'اسم',
-    'الاسمالشائع',
-    'اسمالنبات',
-  ],
-  scientificName: [
-    'scientificname',
-    'scientific_name',
-    'latinname',
-    'latin_name',
-    'binomial',
-    'species',
-    'الاسمالعلمي',
-    'الاسماللاتيني',
-  ],
-  confidence: [
-    'confidence',
-    'confidencepercent',
-    'score',
-    'certainty',
-    'probability',
-    'الثقة',
-  ],
-  watering: [
-    'watering',
-    'water',
-    'waterneeds',
-    'irrigation',
-    'الري',
-    'احتياجاتالري',
-    'ماء',
-  ],
-  light: [
-    'light',
-    'sunlight',
-    'lighting',
-    'sun',
-    'lightneeds',
-    'الإضاءة',
-    'الاضاءة',
-    'الشمس',
-    'ضوء',
-  ],
-  temperature: [
-    'temperature',
-    'temp',
-    'temperaturerange',
-    'temperature_range',
-    'heat',
-    'الحرارة',
-    'درجةالحرارة',
-  ],
-  description: [
-    'description',
-    'desc',
-    'summary',
-    'about',
-    'overview',
-    'الوصف',
-    'وصف',
-  ],
-  soil: [
-    'soil',
-    'soiltype',
-    'soiltypes',
-    'soil_type',
-    'التربة',
-    'نوعالتربة',
-  ],
-  environment: [
-    'environment',
-    'environments',
-    'habitat',
-    'climate',
-    'البيئة',
-    'البيئةالمناسبة',
-  ],
-  careGuide: [
-    'careguide',
-    'care_guide',
-    'care',
-    'careinstructions',
-    'caretips',
-    'العناية',
-    'دليلالعناية',
-  ],
-} as const
-
-type PlantField = keyof typeof FIELD_ALIASES
-
 function buildNormalizedMap(
   record: Record<string, unknown>,
 ): Map<string, unknown> {
   const map = new Map<string, unknown>()
   for (const [key, value] of Object.entries(record)) {
-    const normalized = normalizeKey(key)
-    if (!normalized) continue
-    if (!map.has(normalized) || coerceToText(map.get(normalized)) === null) {
-      map.set(normalized, value)
-    }
+    map.set(normalizeKey(key), value)
   }
   return map
 }
 
-function lookupText(map: Map<string, unknown>, field: PlantField): string | null {
-  for (const alias of FIELD_ALIASES[field]) {
-    const value = coerceToText(map.get(normalizeKey(alias)))
-    if (value) return value
+function lookup(
+  map: Map<string, unknown>,
+  aliases: string[],
+): unknown {
+  for (const alias of aliases) {
+    if (map.has(normalizeKey(alias))) return map.get(normalizeKey(alias))
   }
-  return null
+  return undefined
 }
 
-function lookupConfidence(map: Map<string, unknown>): number | null {
-  for (const alias of FIELD_ALIASES.confidence) {
-    const value = coerceConfidence(map.get(normalizeKey(alias)))
-    if (value !== null) return value
-  }
-  return null
-}
-
-const WRAPPER_KEYS = new Set(
-  [
-    'plant',
-    'data',
-    'result',
-    'results',
-    'response',
-    'payload',
-    'identification',
-    'identifiedplant',
-    'species',
-    'info',
-    'details',
-    'output',
-    'analysis',
-  ].map(normalizeKey),
-)
-
-const CARE_WRAPPER_KEYS = new Set(
-  ['care', 'careinfo', 'care_info', 'careguide', 'needs', 'requirements', 'العناية'].map(
-    normalizeKey,
-  ),
-)
-
-function unwrapPlantRecord(
-  value: unknown,
-  depth = 0,
-): Record<string, unknown> | null {
-  if (depth > 4) return null
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = unwrapPlantRecord(item, depth + 1)
-      if (found) return found
-    }
-    return null
-  }
-
-  const record = asRecord(value)
-  if (!record) return null
-
-  const map = buildNormalizedMap(record)
-  if (lookupText(map, 'name') || lookupText(map, 'scientificName')) {
-    return record
-  }
-
-  for (const [key, nested] of Object.entries(record)) {
-    if (!WRAPPER_KEYS.has(normalizeKey(key))) continue
-    const found = unwrapPlantRecord(nested, depth + 1)
-    if (found) return found
-  }
-
-  return record
-}
-
-/** Strip markdown fences, BOM, smart quotes; isolate JSON object/array. */
+/** Strip markdown fences and isolate the first JSON object. */
 export function extractJsonPayload(raw: string): string {
   let text = raw.trim()
   text = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -508,22 +285,10 @@ export function extractJsonPayload(raw: string): string {
       .replace(/\s*```$/i, '')
   }
 
-  const objStart = text.indexOf('{')
-  const arrStart = text.indexOf('[')
-  const start =
-    objStart === -1
-      ? arrStart
-      : arrStart === -1
-        ? objStart
-        : Math.min(objStart, arrStart)
-
-  if (start === -1) return text
-
-  const opener = text[start]
-  const closer = opener === '[' ? ']' : '}'
-  const end = text.lastIndexOf(closer)
-  if (end > start) return text.slice(start, end + 1)
-  return text.slice(start)
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end > start) return text.slice(start, end + 1)
+  return text
 }
 
 function softRepairJson(text: string): string {
@@ -545,246 +310,173 @@ function tryParseJson(raw: string): unknown | null {
   return null
 }
 
-function extractFieldsViaRegex(raw: string): GeminiPlantJson | null {
-  const text = extractJsonPayload(raw)
-  const found: Record<string, string> = {}
-  const pairRe =
-    /["']([^"']+)["']\s*:\s*(?:["']([^"']*)["']|(-?\d+(?:\.\d+)?)|([^,}\]\n]+))/g
-
-  let match: RegExpExecArray | null
-  while ((match = pairRe.exec(text)) !== null) {
-    const key = normalizeKey(match[1] ?? '')
-    const value = (match[2] ?? match[3] ?? match[4] ?? '')
-      .trim()
-      .replace(/^["']|["']$/g, '')
-    if (!key || !value || value === 'null' || value === 'undefined') continue
-    if (!found[key]) found[key] = value
+function readIsPlant(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const lower = value.trim().toLowerCase()
+    if (['true', 'yes', '1', 'plant', 'نبات'].includes(lower)) return true
+    if (['false', 'no', '0', 'notplant', 'غيرنبات'].includes(lower)) return false
   }
-
-  if (Object.keys(found).length === 0) return null
-
-  const map = new Map<string, unknown>(Object.entries(found))
-  return mapToGeminiPlant(map)
-}
-
-function mergeCareWrapper(
-  plantRecord: Record<string, unknown>,
-): Map<string, unknown> {
-  const map = buildNormalizedMap(plantRecord)
-
-  for (const [key, value] of Object.entries(plantRecord)) {
-    if (!CARE_WRAPPER_KEYS.has(normalizeKey(key))) continue
-    const careRecord = asRecord(value)
-    if (!careRecord) {
-      const careText = coerceToText(value)
-      if (careText && !map.has(normalizeKey('careGuide'))) {
-        map.set(normalizeKey('careGuide'), careText)
-      }
-      continue
-    }
-    for (const [careKey, careValue] of Object.entries(careRecord)) {
-      const normalized = normalizeKey(careKey)
-      if (!map.has(normalized) || coerceToText(map.get(normalized)) === null) {
-        map.set(normalized, careValue)
-      }
-    }
-  }
-
-  return map
-}
-
-function mapToGeminiPlant(map: Map<string, unknown>): GeminiPlantJson | null {
-  const plant: GeminiPlantJson = {
-    name: lookupText(map, 'name') ?? undefined,
-    scientificName: lookupText(map, 'scientificName') ?? undefined,
-    confidence: lookupConfidence(map) ?? undefined,
-    watering: lookupText(map, 'watering') ?? undefined,
-    light: lookupText(map, 'light') ?? undefined,
-    temperature: lookupText(map, 'temperature') ?? undefined,
-    description: lookupText(map, 'description') ?? undefined,
-    soil: lookupText(map, 'soil') ?? undefined,
-    environment: lookupText(map, 'environment') ?? undefined,
-    careGuide: lookupText(map, 'careGuide') ?? undefined,
-    common_name: lookupText(map, 'name') ?? undefined,
-    scientific_name: lookupText(map, 'scientificName') ?? undefined,
-  }
-
-  const hasAny = Boolean(
-    plant.name ||
-      plant.scientificName ||
-      plant.watering ||
-      plant.light ||
-      plant.temperature ||
-      plant.description ||
-      plant.soil ||
-      plant.environment ||
-      plant.careGuide,
-  )
-
-  return hasAny ? plant : null
-}
-
-/**
- * Bulletproof Gemini JSON → structured plant object.
- * Handles raw JSON, markdown fences, wrappers, alternate keys, and partial payloads.
- */
-export function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
-  const parsed = tryParseJson(rawText)
-
-  if (parsed !== null) {
-    const plantRecord = unwrapPlantRecord(parsed)
-    if (plantRecord) {
-      const mapped = mapToGeminiPlant(mergeCareWrapper(plantRecord))
-      if (mapped) return mapped
-    }
-  }
-
-  const regexFallback = extractFieldsViaRegex(rawText)
-  if (regexFallback) {
-    console.warn('[Gemini] used regex fallback parser')
-    return regexFallback
-  }
-
+  if (typeof value === 'number') return value !== 0
   return null
 }
 
-/**
- * Fill missing care fields from sibling values so UI cards never stay empty
- * after a successful (even partial) parse.
- */
-function ensureNonEmptyFields(plant: GeminiPlantJson): Required<
-  Pick<
-    GeminiPlantJson,
-    | 'name'
-    | 'scientificName'
-    | 'watering'
-    | 'light'
-    | 'temperature'
-    | 'description'
-    | 'soil'
-    | 'environment'
-    | 'careGuide'
-  >
-> & { confidence: number } {
+function mapCandidateFromRecord(
+  map: Map<string, unknown>,
+): PlantIdentificationCandidate | null {
   const name =
-    plant.name?.trim() ||
-    plant.common_name?.trim() ||
-    plant.scientificName?.trim() ||
-    plant.scientific_name?.trim() ||
-    'نبات تم التعرف عليه'
+    coerceToText(lookup(map, ['name', 'common_name', 'commonName', 'arabic_name', 'الاسم'])) ||
+    null
+  const rawScientific =
+    coerceToText(
+      lookup(map, [
+        'scientificName',
+        'scientific_name',
+        'latinName',
+        'الاسمالعلمي',
+      ]),
+    ) || null
 
-  const scientificName =
-    plant.scientificName?.trim() ||
-    plant.scientific_name?.trim() ||
-    name
+  if (!name && !rawScientific) return null
 
-  const description =
-    plant.description?.trim() ||
-    `نبات معروف باسم ${name}. راجع إرشادات العناية أدناه.`
+  const displayName = name || rawScientific || ''
+  const scientificName = rawScientific
+    ? extractBinomialScientificName(rawScientific) || rawScientific
+    : displayName
 
-  const watering =
-    plant.watering?.trim() || 'الري حسب حاجة التربة مع تجنب الإفراط.'
-  const light =
-    plant.light?.trim() || 'إضاءة ساطعة غير مباشرة إلى شمس معتدلة.'
-  const temperature =
-    plant.temperature?.trim() || 'درجة حرارة معتدلة مناسبة لمعظم النباتات المنزلية.'
-  const soil =
-    plant.soil?.trim() || 'تربة جيدة التصريف غنية بالمواد العضوية.'
-  const environment =
-    plant.environment?.trim() || 'بيئة داخلية أو خارجية حسب نوع النبات.'
-
-  const careGuide =
-    plant.careGuide?.trim() ||
-    [
-      `الري: ${watering}`,
-      `الإضاءة: ${light}`,
-      `الحرارة: ${temperature}`,
-      `التربة: ${soil}`,
-      `البيئة: ${environment}`,
-      description,
-    ].join('\n')
-
-  const confidence =
-    typeof plant.confidence === 'number' && Number.isFinite(plant.confidence)
-      ? Math.min(Math.max(Math.round(plant.confidence), 1), 100)
-      : 75
-
-  return {
-    name,
-    scientificName,
-    confidence,
-    watering,
-    light,
-    temperature,
-    description,
-    soil,
-    environment,
-    careGuide,
-  }
-}
-
-function mapGeminiPlantToCandidate(
-  plant: GeminiPlantJson,
-): PlantIdentificationCandidate {
-  const filled = ensureNonEmptyFields(plant)
-
-  const rawScientific = filled.scientificName
-  const binomial = extractBinomialScientificName(rawScientific)
-  const scientificName = binomial || rawScientific
+  const confidence = coerceConfidence(
+    lookup(map, ['confidence', 'score', 'certainty', 'الثقة']),
+  )
+  const watering = coerceToText(
+    lookup(map, ['watering', 'water', 'الري']),
+  )
+  const light = coerceToText(
+    lookup(map, ['light', 'sunlight', 'الإضاءة', 'الاضاءة']),
+  )
+  const temperature = coerceToText(
+    lookup(map, ['temperature', 'temp', 'الحرارة']),
+  )
+  const description = coerceToText(
+    lookup(map, ['description', 'desc', 'الوصف']),
+  )
 
   const genus =
     scientificName && /^[A-Za-z]/.test(scientificName)
       ? scientificName.split(/\s+/)[0] ?? null
       : null
 
-  const score = filled.confidence / 100
-
   return {
-    name: filled.name,
+    name: displayName,
     scientificName,
     scientificNameAuthorship: null,
-    commonNames: [filled.name],
+    commonNames: [displayName],
     family: null,
     genus,
-    score,
-    confidencePercent: filled.confidence,
+    score: confidence / 100,
+    confidencePercent: confidence,
     taxonId: null,
-    description: filled.description,
-    watering: filled.watering,
-    light: filled.light,
-    temperature: filled.temperature,
-    soil: filled.soil,
-    environment: filled.environment,
-    careGuide: filled.careGuide,
-    healthStatus: plant.health_status?.trim() || `${filled.confidence}%`,
+    description,
+    watering,
+    light,
+    temperature,
+    soil: null,
+    environment: null,
+    careGuide: null,
+    healthStatus: `${confidence}%`,
   }
 }
 
-function outcomeFromGeminiText(
-  text: string,
+/**
+ * Parse Gemini JSON into a success outcome.
+ * Returns null only when the payload is unusable — never invents plant data.
+ */
+export function outcomeFromGeminiText(
+  rawText: string,
 ): Extract<PlantIdentificationOutcome, { ok: true }> | null {
-  const trimmed = text.trim()
+  const trimmed = rawText.trim()
   if (!trimmed) return null
 
   console.log('[Gemini] RAW response text:', trimmed)
 
-  const plant = parseGeminiPlantJson(trimmed)
-  console.log('[Gemini] PARSED plant object:', plant)
+  const parsed = tryParseJson(trimmed)
+  console.log('[Gemini] PARSED JSON:', parsed)
 
-  if (!plant) {
-    console.warn('[Gemini] parse produced null — raw preview:', trimmed.slice(0, 500))
+  if (parsed === null) {
+    console.error('Plant Identification Error:', new Error('JSON parse failed'))
     return null
   }
 
-  const candidate = mapGeminiPlantToCandidate(plant)
-  console.log('[Gemini] MAPPED candidate for UI:', candidate)
+  const record = asRecord(parsed)
+  if (!record) {
+    console.error('Plant Identification Error:', new Error('Parsed value is not an object'))
+    return null
+  }
 
-  return {
+  const map = buildNormalizedMap(record)
+  const isPlantFlag = readIsPlant(
+    lookup(map, ['isPlant', 'is_plant', 'plant', 'containsPlant']),
+  )
+
+  // Explicit non-plant
+  if (isPlantFlag === false) {
+    const message =
+      coerceToText(lookup(map, ['message', 'error', 'reason', 'الرسالة'])) ||
+      NON_PLANT_MESSAGE
+
+    const outcome: Extract<PlantIdentificationOutcome, { ok: true }> = {
+      ok: true,
+      isPlant: false,
+      message,
+      bestMatch: null,
+      candidates: [],
+      identifiedAt: new Date().toISOString(),
+    }
+    console.log('[Gemini] NON-PLANT outcome:', outcome)
+    return outcome
+  }
+
+  // Explicit plant OR missing flag but plant fields present
+  const candidate = mapCandidateFromRecord(map)
+  if (!candidate) {
+    // No plant fields and no clear plant flag → treat as non-plant when model said nothing useful
+    if (isPlantFlag === null) {
+      const maybeMessage = coerceToText(
+        lookup(map, ['message', 'error', 'reason']),
+      )
+      if (maybeMessage) {
+        return {
+          ok: true,
+          isPlant: false,
+          message: maybeMessage,
+          bestMatch: null,
+          candidates: [],
+          identifiedAt: new Date().toISOString(),
+        }
+      }
+    }
+    console.error(
+      'Plant Identification Error:',
+      new Error('Plant JSON missing name/scientificName'),
+    )
+    return null
+  }
+
+  // If model forgot isPlant but returned plant fields, accept as plant
+  const outcome: Extract<PlantIdentificationOutcome, { ok: true }> = {
     ok: true,
+    isPlant: true,
+    message: null,
     bestMatch: candidate.scientificName || candidate.name,
     candidates: [candidate],
     identifiedAt: new Date().toISOString(),
   }
+
+  console.log('[Gemini] PLANT outcome / mapped candidate:', {
+    summary: summarizePrimaryCandidate(outcome),
+    candidate,
+  })
+
+  return outcome
 }
 
 function failure(
@@ -794,7 +486,7 @@ function failure(
   return { ok: false, code, message }
 }
 
-// ─── Internal: SDK waterfall + silent retries ────────────────────────────────
+// ─── Gemini SDK call ─────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -802,32 +494,15 @@ function sleep(ms: number): Promise<void> {
   })
 }
 
-function isOverloadedError(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message.toLowerCase()
-      : String(error ?? '').toLowerCase()
-
-  return (
-    message.includes('503') ||
-    message.includes('overloaded') ||
-    message.includes('high demand') ||
-    message.includes('unavailable') ||
-    message.includes('resource_exhausted') ||
-    message.includes('too many requests') ||
-    message.includes('429')
-  )
-}
-
-function createModel(apiKey: string, modelName: string): GenerativeModel {
+function createModel(apiKey: string, withSchema: boolean): GenerativeModel {
   const client = new GoogleGenerativeAI(apiKey)
   return client.getGenerativeModel({
-    model: modelName,
+    model: GEMINI_MODEL,
     systemInstruction: SYSTEM_INSTRUCTION,
     generationConfig: {
       temperature: 0.2,
       responseMimeType: 'application/json',
-      responseSchema: PLANT_RESPONSE_SCHEMA,
+      ...(withSchema ? { responseSchema: PLANT_RESPONSE_SCHEMA } : {}),
     },
   })
 }
@@ -837,12 +512,23 @@ async function generateOnce(
   base64Image: string,
   mimeType: string,
 ): Promise<string> {
+  const pureBase64 = cleanBase64(base64Image)
+  if (!pureBase64) {
+    throw new Error('Empty base64 image payload')
+  }
+
+  console.log('[Gemini] sending inlineData', {
+    model: GEMINI_MODEL,
+    mimeType,
+    base64Length: pureBase64.length,
+  })
+
   const result = await model.generateContent([
-    { text: USER_IDENTIFY_PROMPT },
+    { text: USER_PROMPT },
     {
       inlineData: {
         mimeType: mimeType || 'image/jpeg',
-        data: cleanBase64(base64Image),
+        data: pureBase64,
       },
     },
   ])
@@ -850,158 +536,40 @@ async function generateOnce(
   return result.response.text()
 }
 
-async function generateWithRetries(
-  modelName: string,
+async function callGeminiWithImage(
   apiKey: string,
   base64Image: string,
   mimeType: string,
-): Promise<string | null> {
-  const model = createModel(apiKey, modelName)
+): Promise<string> {
+  let lastError: unknown = null
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const withSchema = attempt === 1
     try {
+      const model = createModel(apiKey, withSchema)
       const text = await generateOnce(model, base64Image, mimeType)
-      console.log('[Gemini] generateOnce raw text', {
-        modelName,
-        attempt,
-        length: text.length,
-        preview: text.slice(0, 400),
-      })
       if (text.trim()) return text
-      console.warn('[Gemini] empty response', { modelName, attempt })
+      lastError = new Error('Empty Gemini response text')
     } catch (error) {
+      lastError = error
       console.error('Plant Identification Error:', error)
-      console.warn('[Gemini] attempt failed (suppressed)', {
-        modelName,
-        attempt,
-        overloaded: isOverloadedError(error),
-        message: error instanceof Error ? error.message : String(error),
-      })
-
-      // Some models reject responseSchema — retry once without schema
-      if (
-        attempt === 1 &&
-        String(error instanceof Error ? error.message : error)
-          .toLowerCase()
-          .includes('schema')
-      ) {
-        try {
-          const client = new GoogleGenerativeAI(apiKey)
-          const fallbackModel = client.getGenerativeModel({
-            model: modelName,
-            systemInstruction: SYSTEM_INSTRUCTION,
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json',
-            },
-          })
-          const text = await generateOnce(fallbackModel, base64Image, mimeType)
-          if (text.trim()) {
-            console.log('[Gemini] schema-less fallback succeeded', { modelName })
-            return text
-          }
-        } catch (fallbackError) {
-          console.error('Plant Identification Error:', fallbackError)
-        }
-      }
     }
 
-    if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+    if (attempt < MAX_ATTEMPTS) {
       await sleep(RETRY_DELAY_MS * attempt)
     }
   }
 
-  return null
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError ?? 'Gemini request failed'))
 }
 
-async function identifyWithModelWaterfall(
-  apiKey: string,
-  base64Image: string,
-  mimeType: string,
-): Promise<Extract<PlantIdentificationOutcome, { ok: true }> | null> {
-  for (const modelName of GEMINI_MODELS) {
-    const text = await generateWithRetries(
-      modelName,
-      apiKey,
-      base64Image,
-      mimeType,
-    )
-    if (!text) {
-      console.warn('[Gemini] moving to next model', { modelName })
-      continue
-    }
-
-    const outcome = outcomeFromGeminiText(text)
-    if (outcome?.ok) {
-      console.log('[Gemini] SUCCESS identification', {
-        modelName,
-        summary: summarizePrimaryCandidate(outcome),
-      })
-      return outcome
-    }
-
-    console.warn('[Gemini] unusable JSON — trying next model', { modelName })
-  }
-
-  return null
-}
-
-// ─── Public: identify ────────────────────────────────────────────────────────
+// ─── Public identify ─────────────────────────────────────────────────────────
 
 /**
- * Structured soft-success used when Gemini is unreachable / unparsable.
- * Keeps the UI flow alive with fully populated care cards — never empty.
- */
-export function buildGracefulFallbackSuccess(): Extract<
-  PlantIdentificationOutcome,
-  { ok: true }
-> {
-  const name = 'نبات طبيعي'
-  const watering = 'ري معتدل عند جفاف التربة'
-  const light = 'إضاءة ساطعة غير مباشرة'
-  const temperature = 'درجة حرارة معتدلة (١٨–٢٨°م)'
-  const soil = 'تربة جيدة التصريف غنية بالمواد العضوية'
-  const environment = 'بيئة داخلية أو شرفة بإضاءة مناسبة'
-  const description = 'تم التعرف على النبات بنجاح'
-  const careGuide = [
-    `الري: ${watering}`,
-    `الإضاءة: ${light}`,
-    `الحرارة: ${temperature}`,
-    `التربة: ${soil}`,
-    `البيئة: ${environment}`,
-  ].join('\n')
-
-  const candidate: PlantIdentificationCandidate = {
-    name,
-    scientificName: name,
-    scientificNameAuthorship: null,
-    commonNames: [name],
-    family: null,
-    genus: null,
-    score: 0.7,
-    confidencePercent: 70,
-    taxonId: null,
-    description,
-    watering,
-    light,
-    temperature,
-    soil,
-    environment,
-    careGuide,
-    healthStatus: '70%',
-  }
-
-  return {
-    ok: true,
-    bestMatch: candidate.scientificName,
-    candidates: [candidate],
-    identifiedAt: new Date().toISOString(),
-  }
-}
-
-/**
- * Identify a plant via `@google/generative-ai` with structured JSON output.
- * API / parse failures never throw to the UI — they return a populated soft success.
+ * Identify a plant from a real user image via Gemini 1.5 Flash.
+ * Never returns hardcoded mock plant care data.
  */
 export async function identifyPlant(
   file: File,
@@ -1037,13 +605,17 @@ export async function identifyPlant(
     })
   } catch (error) {
     console.error('Plant Identification Error:', error)
-    // Soft-succeed so the result UI still renders populated cards
-    return buildGracefulFallbackSuccess()
+    return failure(
+      'INVALID_FILE',
+      'تعذّر تجهيز الصورة. جرّب صورة أصغر أو بصيغة JPEG/PNG.',
+    )
   }
 
   if (uploadFile.size > MAX_UPLOAD_BYTES) {
-    console.error('Plant Identification Error:', new Error('FILE_TOO_LARGE after compress'))
-    return buildGracefulFallbackSuccess()
+    return failure(
+      'FILE_TOO_LARGE',
+      'ما زالت الصورة كبيرة بعد الضغط. جرّب التقاطاً أقرب أو دقة أقل.',
+    )
   }
 
   let base64: string
@@ -1051,25 +623,28 @@ export async function identifyPlant(
     base64 = await fileToBase64(uploadFile)
   } catch (error) {
     console.error('Plant Identification Error:', error)
-    return buildGracefulFallbackSuccess()
+    return failure('INVALID_FILE', 'تعذّر قراءة الصورة.')
   }
 
   const apiKey = getGeminiApiKey()
   const mimeType = resolveMimeType(uploadFile)
 
   try {
-    const success = await identifyWithModelWaterfall(apiKey, base64, mimeType)
-    if (success) return success
+    const rawText = await callGeminiWithImage(apiKey, base64, mimeType)
+    const outcome = outcomeFromGeminiText(rawText)
+    if (outcome) return outcome
 
-    console.error(
-      'Plant Identification Error:',
-      new Error('All Gemini models/retries exhausted or JSON unusable'),
+    return failure(
+      'NO_RESULTS',
+      'تعذّر فهم نتيجة التعريف. أعد المحاولة بصورة أوضح.',
     )
   } catch (error) {
     console.error('Plant Identification Error:', error)
+    return failure(
+      'API_ERROR',
+      'تعذّر الاتصال بخدمة التعريف. تحقق من الاتصال وأعد المحاولة.',
+    )
   }
-
-  return buildGracefulFallbackSuccess()
 }
 
 export async function identifyPlantOrThrow(

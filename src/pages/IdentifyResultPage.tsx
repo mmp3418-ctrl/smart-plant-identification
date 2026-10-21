@@ -9,8 +9,6 @@ import {
   Thermometer,
   AlertTriangle,
   BookOpen,
-  Sprout,
-  Trees,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
 import {
@@ -27,6 +25,7 @@ function isIdentifySessionResult(value: unknown): value is IdentifySessionResult
     typeof record.previewUrl === 'string' &&
     Array.isArray(record.candidates) &&
     typeof record.identifiedAt === 'string' &&
+    typeof record.isPlant === 'boolean' &&
     record.match !== undefined &&
     typeof record.match === 'object'
   )
@@ -37,7 +36,7 @@ function pickText(
 ): string | null {
   for (const value of values) {
     const trimmed = value?.trim()
-    if (trimmed && trimmed !== '—') return trimmed
+    if (trimmed) return trimmed
   }
   return null
 }
@@ -51,7 +50,76 @@ export function IdentifyResultPage() {
     return <Navigate to="/identify" replace />
   }
 
-  const { previewUrl, bestMatch, candidates, match } = state
+  const { previewUrl, bestMatch, candidates, match, isPlant, message } = state
+
+  // ── Non-plant warning ──────────────────────────────────────────────────────
+  if (!isPlant) {
+    return (
+      <div className="container-app py-6 sm:py-8 lg:py-10">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted dark:text-stone-300 hover:text-brand dark:hover:text-emerald-300"
+          >
+            <ArrowRight className="size-4" aria-hidden />
+            رجوع
+          </button>
+          <Link to="/identify">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<Camera className="size-4" />}
+            >
+              تعريف جديد
+            </Button>
+          </Link>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+          <div className="overflow-hidden rounded-2xl glass-panel">
+            <img
+              src={previewUrl}
+              alt="الصورة المُحلَّلة"
+              className="aspect-[4/3] w-full object-cover"
+            />
+          </div>
+
+          <Card glass padding="lg">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Badge variant="warning">ليست نباتاً</Badge>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/50 px-4 py-4">
+              <AlertTriangle
+                className="mt-0.5 size-5 shrink-0 text-warning"
+                aria-hidden
+              />
+              <div>
+                <h1 className="text-lg font-extrabold text-ink dark:text-stone-100">
+                  هذه الصورة لا تحتوي على نبات
+                </h1>
+                <p className="mt-2 text-sm leading-relaxed text-muted dark:text-stone-300">
+                  {message?.trim() ||
+                    'الصورة المرفوعة ليست نباتاً. يرجى رفع صورة نبات أو ورقة شجر واضحة.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <Link to="/identify">
+                <Button fullWidth leftIcon={<Camera className="size-4" />}>
+                  رفع صورة نبات أخرى
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Plant result — only Gemini-parsed fields (+ optional DB enrichment) ────
   const top = candidates?.[0]
   const plant = match?.plant
   const confidence = top
@@ -59,45 +127,16 @@ export function IdentifyResultPage() {
     : 0
 
   const displayArabic =
-    pickText(
-      top?.name,
-      top?.commonNames?.[0],
-      plant?.arabic_name,
-      displayPlantCommonName(top, bestMatch),
-    ) || 'نتيجة التعريف'
+    pickText(top?.name, top?.commonNames?.[0], plant?.arabic_name) ||
+    displayPlantCommonName(top, bestMatch)
 
   const displayScientific =
-    pickText(top?.scientificName, plant?.scientific_name, bestMatch) || '—'
+    pickText(top?.scientificName, plant?.scientific_name, bestMatch)
 
-  const wateringValue =
-    pickText(top?.watering, plant?.watering) || '—'
-  const lightValue = pickText(top?.light, plant?.sunlight) || '—'
-  const temperatureValue =
-    pickText(top?.temperature, plant?.temperature_range) || '—'
+  const wateringValue = pickText(top?.watering, plant?.watering)
+  const lightValue = pickText(top?.light, plant?.sunlight)
+  const temperatureValue = pickText(top?.temperature, plant?.temperature_range)
   const descriptionValue = pickText(top?.description, plant?.description)
-  const soilValue = pickText(top?.soil)
-  const environmentValue = pickText(top?.environment)
-  const careGuideValue = pickText(top?.careGuide)
-
-  const geminiCareSteps = [
-    careGuideValue
-      ? { id: 'gemini-care', label: 'دليل العناية', text: careGuideValue }
-      : null,
-    !careGuideValue && wateringValue !== '—'
-      ? { id: 'gemini-water', label: 'الري', text: wateringValue }
-      : null,
-    !careGuideValue && lightValue !== '—'
-      ? { id: 'gemini-light', label: 'الإضاءة', text: lightValue }
-      : null,
-    !careGuideValue && temperatureValue !== '—'
-      ? { id: 'gemini-temp', label: 'الحرارة', text: temperatureValue }
-      : null,
-    !careGuideValue && descriptionValue
-      ? { id: 'gemini-desc', label: 'الوصف', text: descriptionValue }
-      : null,
-  ].filter((step): step is { id: string; label: string; text: string } =>
-    Boolean(step),
-  )
 
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
@@ -147,12 +186,9 @@ export function IdentifyResultPage() {
           <h1 className="mt-1 text-2xl font-extrabold text-ink dark:text-stone-100 sm:text-3xl">
             {displayArabic}
           </h1>
-          <p className="mt-1 text-sm italic text-muted dark:text-stone-300">
-            {displayScientific}
-          </p>
-          {top?.scientificNameAuthorship ? (
-            <p className="mt-0.5 text-xs text-muted dark:text-stone-400">
-              {top.scientificNameAuthorship}
+          {displayScientific ? (
+            <p className="mt-1 text-sm italic text-muted dark:text-stone-300">
+              {displayScientific}
             </p>
           ) : null}
 
@@ -162,38 +198,27 @@ export function IdentifyResultPage() {
             </p>
           ) : null}
 
-          <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
-            <MetaTile
-              icon={<Droplets className="size-4" />}
-              label="الري"
-              value={wateringValue}
-            />
-            <MetaTile
-              icon={<Sun className="size-4" />}
-              label="الإضاءة"
-              value={lightValue}
-            />
-            <MetaTile
-              icon={<Thermometer className="size-4" />}
-              label="الحرارة"
-              value={temperatureValue}
-            />
-          </div>
-
-          {(soilValue || environmentValue) && (
-            <div className="mt-3 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
-              {soilValue ? (
+          {(wateringValue || lightValue || temperatureValue) && (
+            <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
+              {wateringValue ? (
                 <MetaTile
-                  icon={<Sprout className="size-4" />}
-                  label="التربة"
-                  value={soilValue}
+                  icon={<Droplets className="size-4" />}
+                  label="الري"
+                  value={wateringValue}
                 />
               ) : null}
-              {environmentValue ? (
+              {lightValue ? (
                 <MetaTile
-                  icon={<Trees className="size-4" />}
-                  label="البيئة"
-                  value={environmentValue}
+                  icon={<Sun className="size-4" />}
+                  label="الإضاءة"
+                  value={lightValue}
+                />
+              ) : null}
+              {temperatureValue ? (
+                <MetaTile
+                  icon={<Thermometer className="size-4" />}
+                  label="الحرارة"
+                  value={temperatureValue}
                 />
               ) : null}
             </div>
@@ -211,88 +236,49 @@ export function IdentifyResultPage() {
         </Card>
       </div>
 
-      {/* Soil & environment — Gemini text first, then DB badges */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card glass padding="lg">
-          <CardHeader
-            title="أنواع التربة المناسبة"
-            description={
-              match.soilTypes.length > 0
-                ? 'من قاعدة البيانات المحلية'
-                : soilValue
-                  ? 'من نتيجة التعريف'
-                  : undefined
-            }
-          />
-          <CardContent>
-            {match.soilTypes.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {match.soilTypes.map((soil) => (
-                  <Badge key={soil.id} variant="soil">
-                    {soil.name_ar}
-                  </Badge>
-                ))}
-              </div>
-            ) : soilValue ? (
-              <p className="text-sm leading-relaxed text-muted dark:text-stone-300">
-                {soilValue}
-              </p>
-            ) : (
-              <p className="text-sm text-muted dark:text-stone-400">
-                لا توجد بيانات تربة مرتبطة بهذا النبات حالياً.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      {(match.soilTypes.length > 0 || match.environments.length > 0) && (
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {match.soilTypes.length > 0 ? (
+            <Card glass padding="lg">
+              <CardHeader title="أنواع التربة المناسبة" />
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {match.soilTypes.map((soil) => (
+                    <Badge key={soil.id} variant="soil">
+                      {soil.name_ar}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
-        <Card glass padding="lg">
-          <CardHeader
-            title="البيئات المناسبة"
-            description={
-              match.environments.length > 0
-                ? 'ظروف النمو المرتبطة بالنبات'
-                : environmentValue
-                  ? 'من نتيجة التعريف'
-                  : undefined
-            }
-            action={<MapPin className="size-4 text-brand dark:text-emerald-300" />}
-          />
-          <CardContent>
-            {match.environments.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {match.environments.map((env) => (
-                  <Badge key={env.id} variant="sage">
-                    {env.name_ar}
-                  </Badge>
-                ))}
-              </div>
-            ) : environmentValue ? (
-              <p className="text-sm leading-relaxed text-muted dark:text-stone-300">
-                {environmentValue}
-              </p>
-            ) : (
-              <p className="text-sm text-muted dark:text-stone-400">
-                لا توجد بيانات بيئة مرتبطة بهذا النبات حالياً.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          {match.environments.length > 0 ? (
+            <Card glass padding="lg">
+              <CardHeader
+                title="البيئات المناسبة"
+                action={
+                  <MapPin className="size-4 text-brand dark:text-emerald-300" />
+                }
+              />
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {match.environments.map((env) => (
+                    <Badge key={env.id} variant="sage">
+                      {env.name_ar}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      )}
 
-      {/* Care guides — DB steps first, else Gemini careGuide */}
-      <Card className="mt-4" glass padding="lg">
-        <CardHeader
-          title="دليل العناية"
-          description={
-            match.careGuides.length > 0
-              ? 'من قاعدة البيانات المحلية'
-              : geminiCareSteps.length > 0
-                ? 'مستخلص من نتيجة التعريف'
-                : undefined
-          }
-        />
-        <CardContent>
-          {match.careGuides.length > 0 ? (
+      {match.careGuides.length > 0 ? (
+        <Card className="mt-4" glass padding="lg">
+          <CardHeader title="دليل العناية" description="من قاعدة البيانات المحلية" />
+          <CardContent>
             <ol className="space-y-2.5">
               {match.careGuides.map((step, index) => (
                 <li
@@ -306,29 +292,9 @@ export function IdentifyResultPage() {
                 </li>
               ))}
             </ol>
-          ) : geminiCareSteps.length > 0 ? (
-            <div className="space-y-3">
-              {geminiCareSteps.map((step) => (
-                <div
-                  key={step.id}
-                  className="rounded-xl border border-white/20 dark:border-stone-700/55 bg-canvas/60 dark:bg-stone-900/40 px-4 py-3"
-                >
-                  <p className="text-xs font-semibold text-brand dark:text-emerald-300">
-                    {step.label}
-                  </p>
-                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-muted dark:text-stone-300">
-                    {step.text}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted dark:text-stone-400">
-              لا تتوفر تعليمات عناية لهذا النبات حالياً.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {plant?.warnings && plant.warnings.length > 0 ? (
         <Card className="mt-4" glass padding="lg">

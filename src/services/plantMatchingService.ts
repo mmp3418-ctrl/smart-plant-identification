@@ -364,12 +364,19 @@ export async function identifyAndMatchPlant(
   options?: IdentifyImageOptions,
 ): Promise<IdentifyAndMatchResult> {
   const identification = await identifyPlantOrThrow(file, options)
-  const top = identification.candidates?.[0]
 
+  if (!identification.isPlant || !identification.candidates?.[0]) {
+    return {
+      identification,
+      match: emptyMatch(),
+    }
+  }
+
+  const top = identification.candidates[0]
   const match = await matchPlantFromIdentification({
-    scientificName: top?.scientificName ?? identification.bestMatch ?? '',
-    commonNames: top?.commonNames ?? [],
-    taxonId: top?.taxonId ?? null,
+    scientificName: top.scientificName ?? identification.bestMatch ?? '',
+    commonNames: top.commonNames ?? [],
+    taxonId: top.taxonId ?? null,
   })
 
   return { identification, match }

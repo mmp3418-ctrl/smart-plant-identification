@@ -1,16 +1,13 @@
-/** Plant identification contracts (Google Gemini) */
+/** Plant identification contracts (Google Gemini 1.5 Flash) */
 
 export interface IdentifyImageOptions {
-  /** Reserved for future multi-candidate prompts (Gemini returns one primary JSON). */
   maxResults?: number
 }
 
 export interface PlantIdentificationCandidate {
-  /** Common name (Arabic preferred) */
   name: string
   scientificName: string
   scientificNameAuthorship: string | null
-  /** @deprecated Prefer `name` — kept for matching / history helpers */
   commonNames: string[]
   family: string | null
   genus: string | null
@@ -19,19 +16,22 @@ export interface PlantIdentificationCandidate {
   /** Exact confidence percentage 0–100 */
   confidencePercent: number
   taxonId: string | null
-  description: string
-  watering: string
-  light: string
-  temperature: string
-  soil: string
-  environment: string
-  careGuide: string
-  /** Optional free-text certainty note */
+  description: string | null
+  watering: string | null
+  light: string | null
+  temperature: string | null
+  soil: string | null
+  environment: string | null
+  careGuide: string | null
   healthStatus: string | null
 }
 
 export interface PlantIdentificationSuccess {
   ok: true
+  /** Whether Gemini detected a plant / flower / tree / leaf in the image */
+  isPlant: boolean
+  /** Arabic message when `isPlant` is false */
+  message: string | null
   bestMatch: string | null
   candidates: PlantIdentificationCandidate[]
   identifiedAt: string
@@ -54,7 +54,6 @@ export type PlantIdentificationOutcome =
   | PlantIdentificationSuccess
   | PlantIdentificationFailure
 
-/** Safe summary of the top match. */
 export interface PlantIdentificationPrimarySummary {
   name: string
   scientificName: string
@@ -63,21 +62,17 @@ export interface PlantIdentificationPrimarySummary {
   family: string | null
   confidencePercent: number
   score: number
-  description: string
-  watering: string
-  light: string
-  temperature: string
-  soil: string
-  environment: string
-  careGuide: string
-  healthStatus: string | null
+  description: string | null
+  watering: string | null
+  light: string | null
+  temperature: string | null
+  isPlant: boolean
+  message: string | null
 }
 
-/**
- * Structured plant JSON we ask Gemini to return.
- * Parser also accepts legacy / alternate key names.
- */
-export interface GeminiPlantJson {
+/** Raw JSON shapes Gemini may return */
+export interface GeminiPlantPositiveJson {
+  isPlant: true
   name?: string
   scientificName?: string
   confidence?: number
@@ -85,11 +80,11 @@ export interface GeminiPlantJson {
   light?: string
   temperature?: string
   description?: string
-  soil?: string
-  environment?: string
-  careGuide?: string
-  /** Legacy aliases */
-  common_name?: string
-  scientific_name?: string
-  health_status?: string
 }
+
+export interface GeminiPlantNegativeJson {
+  isPlant: false
+  message?: string
+}
+
+export type GeminiPlantJson = GeminiPlantPositiveJson | GeminiPlantNegativeJson

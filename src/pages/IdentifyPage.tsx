@@ -14,7 +14,6 @@ import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
 import { useCamera } from '@/hooks/useCamera'
 import { useAppData } from '@/context/AppDataContext'
 import {
-  buildGracefulFallbackSuccess,
   displayPlantCommonName,
   identifyPlant,
   isGeminiApiConfigured,
@@ -96,48 +95,68 @@ export function IdentifyPage() {
         pendingFile ??
         (await dataUrlToFile(preview, `plant-${Date.now()}.jpg`))
 
-      let identification = await identifyPlant(file, {
+      const identification = await identifyPlant(file, {
         maxResults: 5,
       })
 
-      // Config / validation failures stay as errors; API failures already soft-succeed.
-      // If we somehow get ok:false from the API path, still render fallback cards.
       if (!identification.ok) {
-        if (
-          identification.code === 'MISSING_API_KEY' ||
-          identification.code === 'INVALID_FILE' ||
-          identification.code === 'FILE_TOO_LARGE'
-        ) {
-          setPhase('error')
-          setErrorMessage(identification.message)
-          return
-        }
         console.error('Plant Identification Error:', identification)
-        identification = buildGracefulFallbackSuccess()
+        setPhase('error')
+        setErrorMessage(identification.message)
+        return
+      }
+
+      const emptyMatch: IdentifySessionResult['match'] = {
+        plant: null,
+        soilTypes: [],
+        environments: [],
+        careGuides: [],
+        matchedBy: null,
+      }
+
+      // Non-plant image — show friendly warning on the result page
+      if (!identification.isPlant) {
+        stop()
+        navigate('/identify/result', {
+          state: {
+            previewUrl: preview,
+            isPlant: false,
+            message:
+              identification.message ||
+              'هذه الصورة لا تحتوي على نبات',
+            bestMatch: null,
+            candidates: [],
+            identifiedAt: identification.identifiedAt,
+            match: emptyMatch,
+          } satisfies IdentifySessionResult,
+        })
+        return
       }
 
       const top = identification.candidates[0]
+      if (!top) {
+        setPhase('error')
+        setErrorMessage('لم تُرجع الخدمة بيانات نبات صالحة. أعد المحاولة.')
+        return
+      }
+
       let match
       try {
         match = await matchPlantFromIdentification({
           scientificName:
-            top?.scientificName ?? identification.bestMatch ?? '',
-          commonNames: top?.commonNames ?? [],
-          taxonId: top?.taxonId ?? null,
+            top.scientificName ?? identification.bestMatch ?? '',
+          commonNames: top.commonNames ?? [],
+          taxonId: top.taxonId ?? null,
         })
       } catch (error) {
         console.error('Plant Identification Error:', error)
-        match = {
-          plant: null,
-          soilTypes: [],
-          environments: [],
-          careGuides: [],
-          matchedBy: null,
-        }
+        match = { ...emptyMatch }
       }
 
       const session: IdentifySessionResult = {
         previewUrl: preview,
+        isPlant: true,
+        message: null,
         bestMatch: identification.bestMatch,
         candidates: identification.candidates,
         identifiedAt: identification.identifiedAt,
@@ -146,22 +165,21 @@ export function IdentifyPage() {
 
       try {
         await addHistory({
-          plantId: match.plant?.id ?? top?.scientificName ?? 'unknown',
+          plantId: match.plant?.id ?? top.scientificName ?? 'unknown',
           plantName:
             match.plant?.arabic_name?.trim() ||
-            top?.name?.trim() ||
+            top.name?.trim() ||
             displayPlantCommonName(top, identification.bestMatch),
           scientificName:
             match.plant?.scientific_name ||
-            top?.scientificName ||
+            top.scientificName ||
             identification.bestMatch ||
-            top?.name ||
+            top.name ||
             'unknown',
-          confidence: top?.score ?? 0,
+          confidence: top.score ?? 0,
           imagePreview: preview,
         })
       } catch (historyError) {
-        // History must never block showing the result card
         console.error('Plant Identification Error:', historyError)
       }
 
@@ -169,25 +187,12 @@ export function IdentifyPage() {
       navigate('/identify/result', { state: session })
     } catch (error) {
       console.error('Plant Identification Error:', error)
-
-      // Last-resort: still navigate to a fully populated result card
-      const fallback = buildGracefulFallbackSuccess()
-      stop()
-      navigate('/identify/result', {
-        state: {
-          previewUrl: preview,
-          bestMatch: fallback.bestMatch,
-          candidates: fallback.candidates,
-          identifiedAt: fallback.identifiedAt,
-          match: {
-            plant: null,
-            soilTypes: [],
-            environments: [],
-            careGuides: [],
-            matchedBy: null,
-          },
-        } satisfies IdentifySessionResult,
-      })
+      setPhase('error')
+      setErrorMessage(
+        isServiceError(error)
+          ? error.message
+          : 'تعذّر تحليل الصورة. حاول مرة أخرى بصورة أوضح.',
+      )
     }
   }
 
