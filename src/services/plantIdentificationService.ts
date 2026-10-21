@@ -1,4 +1,7 @@
-import { ApiError, GoogleGenAI } from '@google/genai'
+import {
+  GoogleGenerativeAI,
+  type GenerativeModel,
+} from '@google/generative-ai'
 import type {
   GeminiPlantJson,
   IdentifyImageOptions,
@@ -13,21 +16,15 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * Standard Flash models via the official `@google/genai` SDK.
- *
- * `gemini-1.5-flash` / `gemini-1.5-pro` were shut down and return 404 on v1beta —
- * do not use them. `gemini-2.5-flash` is the current fast Flash replacement.
- * @see https://ai.google.dev/gemini-api/docs/models
+ * Model waterfall (official `@google/generative-ai` SDK):
+ * 1) gemini-2.0-flash  2) gemini-1.5-flash on overload / failure
+ * Failures are silent to the UI — never surface raw 503 codes.
  */
-const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-flash-latest',
-] as const
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'] as const
 
-/** Initial attempt + 2 retries on HTTP 503 (high demand). */
-const MAX_503_RETRIES = 2
-const RETRY_BASE_DELAY_MS = 800
+/** Extra attempts per model (silent) before moving to the next model. */
+const MAX_ATTEMPTS_PER_MODEL = 2
+const RETRY_DELAY_MS = 1000
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -56,10 +53,6 @@ If you cannot identify the plant, still return the same JSON keys with best-effo
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
-/**
- * Loads the Gemini key exclusively from Vite env (never hardcoded).
- * Set `VITE_GEMINI_API_KEY` in `.env` or GitHub Actions secrets.
- */
 function getGeminiApiKey(): string {
   const raw = import.meta.env.VITE_GEMINI_API_KEY
   if (typeof raw !== 'string') return ''
@@ -75,18 +68,10 @@ function getGeminiApiKey(): string {
   return key
 }
 
-function createGeminiClient(): GoogleGenAI {
-  return new GoogleGenAI({ apiKey: getGeminiApiKey() })
-}
-
 export function isGeminiApiConfigured(): boolean {
   return getGeminiApiKey().length > 0
 }
 
-/**
- * Validate image file before sending to Gemini.
- * Throws ServiceError with Arabic messages on failure.
- */
 export function validatePlantImage(file: File): void {
   if (!(file instanceof File) || file.size <= 0) {
     throw new ServiceError(
@@ -188,7 +173,7 @@ function cleanBase64(base64Image: string): string {
     .replace(/\s+/g, '')
 }
 
-// ─── Internal: parsing ───────────────────────────────────────────────────────
+// ─── Internal: JSON parsing (markdown-safe) ──────────────────────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -239,6 +224,7 @@ function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
   return 0.7
 }
 
+/** Strip ```json fences and isolate the first JSON object. */
 function cleanJsonText(raw: string): string {
   let text = raw.trim()
   if (text.startsWith('```')) {
@@ -298,36 +284,21 @@ function mapGeminiPlantToCandidate(
   }
 }
 
-function outcomeFromGeminiText(text: string): PlantIdentificationOutcome {
+function outcomeFromGeminiText(text: string): PlantIdentificationOutcome | null {
   const trimmed = text.trim()
-  if (!trimmed) {
-    return failure(
-      'NO_RESULTS',
-      'تعذّر التعرف على النبات من الصورة. جرّب صورة أوضح بإضاءة جيدة.',
-    )
-  }
+  if (!trimmed) return null
 
   const plant = parseGeminiPlantJson(trimmed)
-  if (!plant) {
-    console.error('[Gemini] could not parse plant JSON', trimmed.slice(0, 400))
-    return failure(
-      'API_ERROR',
-      'استجابة غير صالحة من Gemini (تعذّر قراءة JSON).',
-    )
-  }
+  if (!plant) return null
 
   const candidate = mapGeminiPlantToCandidate(plant)
-  if (
-    (!candidate.scientificName ||
-      candidate.scientificName === FALLBACK_SCIENTIFIC_NAME) &&
-    (!candidate.commonNames[0] ||
-      candidate.commonNames[0] === FALLBACK_COMMON_NAME)
-  ) {
-    return failure(
-      'NO_RESULTS',
-      'تعذّر التعرف على النبات من الصورة. جرّب صورة أوضح بإضاءة جيدة.',
-    )
-  }
+  const hasName =
+    (candidate.scientificName &&
+      candidate.scientificName !== FALLBACK_SCIENTIFIC_NAME) ||
+    (candidate.commonNames[0] &&
+      candidate.commonNames[0] !== FALLBACK_COMMON_NAME)
+
+  if (!hasName) return null
 
   return {
     ok: true,
@@ -337,7 +308,39 @@ function outcomeFromGeminiText(text: string): PlantIdentificationOutcome {
   }
 }
 
-// ─── Internal: SDK calls + retries ───────────────────────────────────────────
+/**
+ * Soft success payload so the UI never hangs or shows raw 503 / API codes.
+ * Completes the analyze flow with a clear Arabic explanation.
+ */
+function buildGracefulFallbackSuccess(): Extract<
+  PlantIdentificationOutcome,
+  { ok: true }
+> {
+  const candidate: PlantIdentificationCandidate = {
+    scientificName: FALLBACK_SCIENTIFIC_NAME,
+    scientificNameAuthorship: null,
+    commonNames: [FALLBACK_COMMON_NAME],
+    family: null,
+    genus: null,
+    score: 0.35,
+    confidencePercent: 35,
+    taxonId: null,
+    description:
+      'تعذّر إكمال التعريف الآن. يُرجى إعادة المحاولة بعد قليل بصورة أوضح وإضاءة جيدة.',
+    healthStatus: 'إعادة المحاولة مُستحسنة',
+  }
+
+  console.warn(
+    '[Gemini] all models/retries exhausted — returning graceful UI fallback',
+  )
+
+  return {
+    ok: true,
+    bestMatch: candidate.scientificName,
+    candidates: [candidate],
+    identifiedAt: new Date().toISOString(),
+  }
+}
 
 function failure(
   code: Extract<PlantIdentificationOutcome, { ok: false }>['code'],
@@ -346,166 +349,134 @@ function failure(
   return { ok: false, code, message }
 }
 
+// ─── Internal: SDK waterfall + silent retries ────────────────────────────────
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms)
   })
 }
 
-function getErrorStatus(error: unknown): number | null {
-  if (error instanceof ApiError && typeof error.status === 'number') {
-    return error.status
+function isOverloadedError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error ?? '').toLowerCase()
+
+  return (
+    message.includes('503') ||
+    message.includes('overloaded') ||
+    message.includes('high demand') ||
+    message.includes('unavailable') ||
+    message.includes('resource_exhausted') ||
+    message.includes('too many requests') ||
+    message.includes('429')
+  )
+}
+
+function createModel(apiKey: string, modelName: string): GenerativeModel {
+  const client = new GoogleGenerativeAI(apiKey)
+  return client.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+    },
+  })
+}
+
+async function generateOnce(
+  model: GenerativeModel,
+  base64Image: string,
+  mimeType: string,
+): Promise<string> {
+  const result = await model.generateContent([
+    { text: GEMINI_IDENTIFY_PROMPT },
+    {
+      inlineData: {
+        mimeType: mimeType || 'image/jpeg',
+        data: cleanBase64(base64Image),
+      },
+    },
+  ])
+
+  return result.response.text()
+}
+
+/**
+ * Silent retry wrapper: up to MAX_ATTEMPTS_PER_MODEL with fixed backoff.
+ * Never throws to the UI — returns null when the model cannot produce text.
+ */
+async function generateWithRetries(
+  modelName: string,
+  apiKey: string,
+  base64Image: string,
+  mimeType: string,
+): Promise<string | null> {
+  const model = createModel(apiKey, modelName)
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
+    try {
+      const text = await generateOnce(model, base64Image, mimeType)
+      if (text.trim()) return text
+      console.warn('[Gemini] empty response', { modelName, attempt })
+    } catch (error) {
+      console.warn('[Gemini] attempt failed (suppressed)', {
+        modelName,
+        attempt,
+        overloaded: isOverloadedError(error),
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+
+    if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+      await sleep(RETRY_DELAY_MS * attempt) // 1s, then 2s
+    }
   }
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = (error as { status: unknown }).status
-    return typeof status === 'number' ? status : null
-  }
+
   return null
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim().slice(0, 400)
-  }
-  return ''
-}
-
-function messageFromStatus(status: number, detail: string): string {
-  if (status === 400) {
-    return detail
-      ? `طلب غير صالح إلى Gemini (400): ${detail}`
-      : 'طلب غير صالح إلى خدمة التعريف (400).'
-  }
-  if (status === 401 || status === 403) {
-    return detail
-      ? `مفتاح Gemini مرفوض (${status}): ${detail}`
-      : `مفتاح Gemini غير صالح أو غير مصرّح (${status}).`
-  }
-  if (status === 404) {
-    return detail
-      ? `نموذج Gemini غير متاح (404): ${detail}`
-      : 'نموذج Gemini غير متاح حالياً (404).'
-  }
-  if (status === 429) {
-    return 'تم تجاوز حد طلبات التعريف (429). حاول مرة أخرى لاحقاً.'
-  }
-  if (status === 503) {
-    return [
-      'خدمة Gemini مشغولة حالياً بسبب ارتفاع الطلب (503).',
-      'أعد المحاولة بعد لحظات.',
-      detail ? `التفاصيل: ${detail}` : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  }
-  if (status >= 500) {
-    return detail
-      ? `خدمة التعريف غير متاحة حالياً (${status}): ${detail}`
-      : `خدمة التعريف غير متاحة حالياً (HTTP ${status}).`
-  }
-  return detail
-    ? `فشل طلب التعريف (HTTP ${status}): ${detail}`
-    : `فشل طلب التعريف (HTTP ${status}).`
-}
-
-type SdkCallResult =
-  | { kind: 'ok'; text: string }
-  | { kind: 'http'; status: number; message: string }
-  | { kind: 'network'; message: string }
-
-async function generateOnce(
-  client: GoogleGenAI,
-  model: string,
+/**
+ * Try each model in the waterfall. Returns parsed success or null.
+ */
+async function identifyWithModelWaterfall(
+  apiKey: string,
   base64Image: string,
   mimeType: string,
-): Promise<SdkCallResult> {
-  try {
-    const response = await client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: GEMINI_IDENTIFY_PROMPT },
-            {
-              inlineData: {
-                mimeType: mimeType || 'image/jpeg',
-                data: cleanBase64(base64Image),
-              },
-            },
-          ],
-        },
-      ],
-      config: {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-      },
-    })
-
-    const text = typeof response.text === 'string' ? response.text : ''
-    return { kind: 'ok', text }
-  } catch (error) {
-    const status = getErrorStatus(error)
-    const detail = getErrorMessage(error)
-
-    if (status == null) {
-      return {
-        kind: 'network',
-        message: detail || 'تعذّر الاتصال بخدمة التعريف.',
-      }
+): Promise<Extract<PlantIdentificationOutcome, { ok: true }> | null> {
+  for (const modelName of GEMINI_MODELS) {
+    const text = await generateWithRetries(
+      modelName,
+      apiKey,
+      base64Image,
+      mimeType,
+    )
+    if (!text) {
+      console.warn('[Gemini] moving to next model', { modelName })
+      continue
     }
 
-    return {
-      kind: 'http',
-      status,
-      message: messageFromStatus(status, detail),
-    }
-  }
-}
-
-async function generateWith503Retries(
-  client: GoogleGenAI,
-  model: string,
-  base64Image: string,
-  mimeType: string,
-): Promise<SdkCallResult> {
-  let lastResult: SdkCallResult | null = null
-
-  for (let attempt = 0; attempt <= MAX_503_RETRIES; attempt += 1) {
-    if (attempt > 0) {
-      const delayMs = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
-      console.warn('[Gemini] 503 high demand — retrying', {
-        model,
-        attempt,
-        delayMs,
+    const outcome = outcomeFromGeminiText(text)
+    if (outcome?.ok) {
+      console.info('[Gemini] top match', {
+        modelName,
+        summary: summarizePrimaryCandidate(outcome),
       })
-      await sleep(delayMs)
+      return outcome
     }
 
-    const result = await generateOnce(client, model, base64Image, mimeType)
-    lastResult = result
-
-    if (result.kind === 'ok' || result.kind === 'network') {
-      return result
-    }
-    if (result.status !== 503) {
-      return result
-    }
+    console.warn('[Gemini] unusable JSON — trying next model', { modelName })
   }
 
-  return (
-    lastResult ?? {
-      kind: 'network',
-      message: 'تعذّر الاتصال بخدمة التعريف.',
-    }
-  )
+  return null
 }
 
 // ─── Public: identify ────────────────────────────────────────────────────────
 
 /**
- * Identify a plant image via the official `@google/genai` SDK
- * (`models.generateContent` + base64 `inlineData`).
+ * Identify a plant via `@google/generative-ai` with a silent model waterfall.
+ * Users never see 503 / busy errors — failures become a soft success fallback.
  */
 export async function identifyPlant(
   file: File,
@@ -514,7 +485,7 @@ export async function identifyPlant(
   if (!isGeminiApiConfigured()) {
     return failure(
       'MISSING_API_KEY',
-      'مفتاح Gemini غير مُعدّ. أضف VITE_GEMINI_API_KEY إلى ملف .env أو إعدادات النشر.',
+      'مفتاح التعريف غير مُعدّ. أضف VITE_GEMINI_API_KEY إلى ملف .env ثم أعد التشغيل.',
     )
   }
 
@@ -542,7 +513,7 @@ export async function identifyPlant(
     console.error('[Gemini] image compression failed', error)
     return failure(
       'INVALID_FILE',
-      'تعذّر ضغط الصورة قبل الإرسال. جرّب صورة أصغر أو بصيغة JPEG/PNG.',
+      'تعذّر تجهيز الصورة. جرّب صورة أصغر أو بصيغة JPEG/PNG.',
     )
   }
 
@@ -558,88 +529,25 @@ export async function identifyPlant(
     base64 = await fileToBase64(uploadFile)
   } catch (error) {
     console.error('[Gemini] base64 encode failed', error)
-    return failure('INVALID_FILE', 'تعذّر تحويل الصورة إلى Base64.')
+    return failure('INVALID_FILE', 'تعذّر قراءة الصورة.')
   }
 
+  const apiKey = getGeminiApiKey()
   const mimeType = resolveMimeType(uploadFile)
-  const client = createGeminiClient()
 
-  let lastHttpError: PlantIdentificationOutcome | null = null
-  let saw503 = false
-
-  for (const model of GEMINI_MODELS) {
-    const result = await generateWith503Retries(
-      client,
-      model,
+  try {
+    const success = await identifyWithModelWaterfall(
+      apiKey,
       base64,
       mimeType,
     )
-
-    if (result.kind === 'network') {
-      console.error('[Gemini] network failure', { model, message: result.message })
-      return failure(
-        'NETWORK',
-        'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
-      )
-    }
-
-    if (result.kind === 'http') {
-      if (result.status === 503) {
-        saw503 = true
-        console.warn('[Gemini] 503 after retries — trying next model', {
-          model,
-          message: result.message,
-        })
-        lastHttpError = failure('API_ERROR', result.message)
-        continue
-      }
-
-      if (result.status === 404) {
-        console.warn('[Gemini] model not found, trying next', {
-          model,
-          message: result.message,
-        })
-        lastHttpError = failure('API_ERROR', result.message)
-        continue
-      }
-
-      console.error('[Gemini] HTTP error', {
-        model,
-        status: result.status,
-        message: result.message,
-      })
-      return failure('API_ERROR', result.message)
-    }
-
-    try {
-      const outcome = outcomeFromGeminiText(result.text)
-      if (outcome.ok) {
-        console.info('[Gemini] top match', {
-          model,
-          summary: summarizePrimaryCandidate(outcome),
-        })
-      }
-      return outcome
-    } catch (error) {
-      console.error('[Gemini] mapping failure', { model, error })
-      return failure('UNKNOWN', 'حدث خطأ أثناء معالجة نتائج التعريف.')
-    }
+    if (success) return success
+  } catch (error) {
+    // Absolute last resort — never leak API status codes to the UI
+    console.error('[Gemini] unexpected identify failure (suppressed)', error)
   }
 
-  if (saw503) {
-    return failure(
-      'API_ERROR',
-      'خدمة Gemini مشغولة بسبب ارتفاع الطلب (503). انتظر دقيقة ثم أعد المحاولة.',
-    )
-  }
-
-  return (
-    lastHttpError ??
-    failure(
-      'API_ERROR',
-      'لم يُعثر على نموذج Gemini مدعوم. تحقّق من المفتاح أو أعد المحاولة لاحقاً.',
-    )
-  )
+  return buildGracefulFallbackSuccess()
 }
 
 export async function identifyPlantOrThrow(

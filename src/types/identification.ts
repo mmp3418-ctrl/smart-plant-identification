@@ -66,25 +66,3 @@ export interface GeminiPlantJson {
   description?: string
   health_status?: string
 }
-
-/** Gemini `generateContent` response (partial-safe). */
-export interface GeminiGenerateContentResponse {
-  candidates?: GeminiCandidate[]
-  promptFeedback?: {
-    blockReason?: string
-    blockReasonMessage?: string
-  }
-  error?: {
-    code?: number
-    message?: string
-    status?: string
-  }
-}
-
-export interface GeminiCandidate {
-  content?: {
-    parts?: Array<{ text?: string }>
-    role?: string
-  }
-  finishReason?: string
-}
