@@ -167,19 +167,6 @@ function buildIdentifyUrl(project: string): string {
   return url.toString()
 }
 
-/**
- * Free CORS proxies for GitHub Pages (browser → proxy → Pl@ntNet).
- * Target URL (including `api-key`) is fully encoded in the query.
- * POST + multipart FormData is forwarded by corsproxy.io.
- */
-function buildCorsProxiedUrls(targetUrl: string): string[] {
-  const encoded = encodeURIComponent(targetUrl)
-  return [
-    `https://corsproxy.io/?${encoded}`,
-    `https://corsproxy.io/?url=${encoded}`,
-  ]
-}
-
 function buildIdentifyFormData(file: File, organ: PlantNetOrgan): FormData {
   const formData = new FormData()
   const filename =
@@ -190,37 +177,6 @@ function buildIdentifyFormData(file: File, organ: PlantNetOrgan): FormData {
   formData.append('images', file, filename)
   formData.append('organs', organ)
   return formData
-}
-
-function cloneFormData(source: FormData): FormData {
-  const next = new FormData()
-  for (const [key, value] of source.entries()) {
-    next.append(key, value)
-  }
-  return next
-}
-
-function isOriginOrCorsFailure(status: number, body: string): boolean {
-  const lower = body.toLowerCase()
-  return (
-    (status === 403 || status === 0) &&
-    (lower.includes('origin') ||
-      lower.includes('cors') ||
-      lower.includes('not allowed') ||
-      lower.includes('unauthorized origin'))
-  )
-}
-
-function isNetworkCorsError(error: unknown): boolean {
-  if (!(error instanceof Error)) return true
-  const message = error.message.toLowerCase()
-  return (
-    message.includes('failed to fetch') ||
-    message.includes('networkerror') ||
-    message.includes('cors') ||
-    message.includes('load failed') ||
-    message.includes('network request failed')
-  )
 }
 
 // ─── Internal: safe parsing (no undefined throws) ────────────────────────────
@@ -467,57 +423,11 @@ async function messageForHttpError(response: Response): Promise<string> {
 
 // ─── Public: identify ────────────────────────────────────────────────────────
 
-type FetchAttempt = {
-  label: string
-  requestUrl: string
-}
-
-async function postIdentifyRequest(
-  requestUrl: string,
-  formData: FormData,
-  label: string,
-): Promise<{ ok: true; response: Response; body: string } | { ok: false; error: unknown }> {
-  try {
-    const response = await fetch(requestUrl, {
-      method: 'POST',
-      body: formData,
-      // No custom headers — browser sets multipart boundary (avoids extra preflight).
-    })
-    const body = await response.text()
-    console.info(`[PlantNet] ${label}`, {
-      status: response.status,
-      statusText: response.statusText,
-      requestUrl,
-      bodyPreview: body.slice(0, 280),
-    })
-    return { ok: true, response, body }
-  } catch (error) {
-    console.warn(`[PlantNet] ${label} threw`, { requestUrl, error })
-    return { ok: false, error }
-  }
-}
-
-function parseIdentifyHttpBody(
-  body: string,
-  maxResults: number,
-): PlantIdentificationOutcome | null {
-  let rawJson: unknown
-  try {
-    rawJson = JSON.parse(body) as unknown
-  } catch {
-    return null
-  }
-  if (!isPlantNetIdentifyResponse(rawJson)) return null
-  return parsePlantNetPayload(rawJson, maxResults)
-}
-
 /**
- * Identify a plant image via Pl@ntNet v2.
+ * Identify a plant image via the official Pl@ntNet v2 API (direct browser fetch).
  *
- * On GitHub Pages, browser Origin is often blocked (403). Requests are sent
- * through free CORS proxies (`corsproxy.io`) that forward POST + FormData
- * to the official URL (api-key remains a query param on the target URL).
- * Parsing / UI contracts stay unchanged.
+ * - `FormData` with `images` + `organs` (no custom headers)
+ * - `api-key` only as a query parameter on my-api.plantnet.org
  */
 export async function identifyPlantWithPlantNet(
   file: File,
@@ -569,109 +479,67 @@ export async function identifyPlantWithPlantNet(
       ? options.maxResults
       : DEFAULT_MAX_RESULTS
 
-  const plantNetUrl = buildIdentifyUrl(project)
-  const baseFormData = buildIdentifyFormData(uploadFile, organ)
+  const url = buildIdentifyUrl(project)
+  const formData = buildIdentifyFormData(uploadFile, organ)
 
-  // Proxy-first for static GitHub Pages; direct kept as a final attempt.
-  const attempts: FetchAttempt[] = [
-    ...buildCorsProxiedUrls(plantNetUrl).map((requestUrl, index) => ({
-      label: `cors-proxy-${index + 1}`,
-      requestUrl,
-    })),
-    { label: 'direct', requestUrl: plantNetUrl },
-  ]
-
-  const failures: string[] = []
-  let lastHttpError: PlantIdentificationOutcome | null = null
-
-  for (const attempt of attempts) {
-    const formData = cloneFormData(baseFormData)
-    const result = await postIdentifyRequest(
-      attempt.requestUrl,
-      formData,
-      attempt.label,
-    )
-
-    if (!result.ok) {
-      if (isNetworkCorsError(result.error)) {
-        failures.push(
-          `${attempt.label}: CORS/network (${result.error instanceof Error ? result.error.message : 'unknown'})`,
-        )
-        continue
-      }
-      failures.push(
-        `${attempt.label}: ${result.error instanceof Error ? result.error.message : 'request failed'}`,
-      )
-      continue
-    }
-
-    const { response, body } = result
-
-    if (response.ok) {
-      try {
-        const outcome = parseIdentifyHttpBody(body, maxResults)
-        if (outcome) {
-          if (outcome.ok) {
-            console.info(
-              '[PlantNet] top match',
-              summarizePrimaryCandidate(outcome),
-            )
-          }
-          return outcome
-        }
-        lastHttpError = failure(
-          'API_ERROR',
-          'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
-        )
-        failures.push(`${attempt.label}: invalid JSON body`)
-        continue
-      } catch (error) {
-        console.error('[PlantNet] mapping failure', error)
-        lastHttpError = failure(
-          'UNKNOWN',
-          'حدث خطأ أثناء معالجة نتائج التعريف.',
-        )
-        continue
-      }
-    }
-
-    if (isOriginOrCorsFailure(response.status, body)) {
-      failures.push(`${attempt.label}: Origin not allowed (HTTP ${response.status})`)
-      // Build a Response-like message without re-consuming body
-      lastHttpError = failure(
-        'API_ERROR',
-        await messageForHttpError(
-          new Response(body, {
-            status: response.status,
-            statusText: response.statusText,
-          }),
-        ),
-      )
-      continue
-    }
-
-    lastHttpError = failure(
-      'API_ERROR',
-      await messageForHttpError(
-        new Response(body, {
-          status: response.status,
-          statusText: response.statusText,
-        }),
-      ),
-    )
-    failures.push(
-      `${attempt.label}: HTTP ${response.status} — ${body.slice(0, 160) || response.statusText}`,
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      // Do not set Content-Type / Authorization — browser sets multipart boundary.
+    })
+  } catch (error) {
+    console.error('[PlantNet] network failure', { url, error })
+    return failure(
+      'NETWORK',
+      'تعذّر الاتصال بخدمة التعريف. تحقق من اتصال الإنترنت ثم أعد المحاولة.',
     )
   }
 
-  console.error('[PlantNet] all attempts failed', { plantNetUrl, failures })
-  return (
-    lastHttpError ??
-    failure(
-      'NETWORK',
-      'تعذّر الاتصال بخدمة التعريف عبر الوكيل أو مباشرة. تحقق من الإنترنت ثم أعد المحاولة.',
+  if (!response.ok) {
+    const message = await messageForHttpError(response)
+    console.error('[PlantNet] HTTP error', {
+      status: response.status,
+      statusText: response.statusText,
+      url,
+      message,
+    })
+    return failure('API_ERROR', message)
+  }
+
+  let rawJson: unknown
+  try {
+    rawJson = await response.json()
+  } catch (error) {
+    console.error('[PlantNet] JSON parse failure', error)
+    return failure(
+      'API_ERROR',
+      'استجابة غير صالحة من خدمة التعريف (تعذّر قراءة JSON).',
     )
-  )
+  }
+
+  if (!isPlantNetIdentifyResponse(rawJson)) {
+    console.error('[PlantNet] unexpected JSON shape', rawJson)
+    return failure(
+      'API_ERROR',
+      'بنية استجابة غير متوقعة من خدمة التعريف.',
+    )
+  }
+
+  try {
+    const outcome = parsePlantNetPayload(rawJson, maxResults)
+    if (outcome.ok) {
+      console.info('[PlantNet] top match', summarizePrimaryCandidate(outcome))
+    }
+    return outcome
+  } catch (error) {
+    console.error('[PlantNet] mapping failure', error)
+    return failure(
+      'UNKNOWN',
+      'حدث خطأ أثناء معالجة نتائج التعريف.',
+    )
+  }
 }
 
 /**
