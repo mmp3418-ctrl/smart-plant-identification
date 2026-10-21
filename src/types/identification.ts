@@ -6,24 +6,28 @@ export interface IdentifyImageOptions {
 }
 
 export interface PlantIdentificationCandidate {
+  /** Common name (Arabic preferred) */
+  name: string
   scientificName: string
   scientificNameAuthorship: string | null
+  /** @deprecated Prefer `name` — kept for matching / history helpers */
   commonNames: string[]
   family: string | null
   genus: string | null
   /** Confidence score in [0, 1] */
   score: number
-  /** Exact confidence percentage 0–100 derived from `score` */
+  /** Exact confidence percentage 0–100 */
   confidencePercent: number
   taxonId: string | null
-  /** Arabic plant / care description from Gemini */
-  description: string | null
-  /** Optional status / certainty text */
+  description: string
+  watering: string
+  light: string
+  temperature: string
+  soil: string
+  environment: string
+  careGuide: string
+  /** Optional free-text certainty note */
   healthStatus: string | null
-  /** Care hints from Gemini (Arabic) */
-  watering: string | null
-  light: string | null
-  temperature: string | null
 }
 
 export interface PlantIdentificationSuccess {
@@ -52,30 +56,38 @@ export type PlantIdentificationOutcome =
 
 /** Safe summary of the top match. */
 export interface PlantIdentificationPrimarySummary {
+  name: string
   scientificName: string
   commonNames: string[]
   commonArabicNames: string[]
   family: string | null
   confidencePercent: number
   score: number
-  description: string | null
+  description: string
+  watering: string
+  light: string
+  temperature: string
+  soil: string
+  environment: string
+  careGuide: string
   healthStatus: string | null
-  watering: string | null
-  light: string | null
-  temperature: string | null
 }
 
 /**
  * Structured plant JSON we ask Gemini to return.
- * Also accepts legacy aliases during parsing for resilience.
+ * Parser also accepts legacy / alternate key names.
  */
 export interface GeminiPlantJson {
   name?: string
   scientificName?: string
+  confidence?: number
   watering?: string
   light?: string
   temperature?: string
   description?: string
+  soil?: string
+  environment?: string
+  careGuide?: string
   /** Legacy aliases */
   common_name?: string
   scientific_name?: string

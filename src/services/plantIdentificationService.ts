@@ -1,6 +1,8 @@
 import {
   GoogleGenerativeAI,
+  SchemaType,
   type GenerativeModel,
+  type ResponseSchema,
 } from '@google/generative-ai'
 import type {
   GeminiPlantJson,
@@ -18,11 +20,9 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 /**
  * Model waterfall (official `@google/generative-ai` SDK):
  * 1) gemini-2.0-flash  2) gemini-1.5-flash on overload / failure
- * Failures are silent to the UI — never surface raw 503 codes.
  */
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'] as const
 
-/** Extra attempts per model (silent) before moving to the next model. */
 const MAX_ATTEMPTS_PER_MODEL = 2
 const RETRY_DELAY_MS = 1000
 
@@ -35,25 +35,64 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ])
 
-const FALLBACK_COMMON_NAME = 'نبات غير محدد'
-const FALLBACK_SCIENTIFIC_NAME = 'نبات غير محدد'
 const ARABIC_SCRIPT = /[\u0600-\u06FF]/
 
-const GEMINI_IDENTIFY_PROMPT = `أنت خبير نباتات. حلّل صورة النبات أو الزهرة التالية بدقة.
+const SYSTEM_INSTRUCTION = `أنت خبير نباتات محترف. مهمتك الوحيدة هي تحليل صورة النبات وإرجاع كائن JSON صارم.
+لا تكتب Markdown ولا \`\`\`json ولا أي نص خارج JSON.
+كل القيم النصية يجب أن تكون بالعربية الفصحى الواضحة ما عدا scientificName (لاتيني).
+لا تترك أي حقل فارغاً — إن لم تكن متأكداً تماماً أعطِ أفضل تقدير واقعي.`
 
-أعد كائن JSON صالحاً فقط — بدون Markdown وبدون \`\`\`json وبدون أي نص خارج JSON.
-يجب أن يحتوي الكائن على هذه المفاتيح بالضبط وبقيم عربية واضحة (ما عدا الاسم العلمي):
+const USER_IDENTIFY_PROMPT = `حلّل صورة النبات أو الزهرة التالية وأعد كائن JSON بالمفاتيح التالية بالضبط:
 
 {
-  "name": "الاسم الشائع بالعربية",
-  "scientificName": "الاسم العلمي اللاتيني (Genus species) بدون المؤلف",
-  "watering": "إرشادات الري بالعربية باختصار",
-  "light": "احتياجات الإضاءة بالعربية باختصار",
-  "temperature": "درجة الحرارة المناسبة بالعربية باختصار",
-  "description": "وصف قصير للنبات وطريقة العناية به بالعربية"
+  "name": "اسم النبات الشائع بالعربية",
+  "scientificName": "الاسم العلمي اللاتيني Genus species بدون المؤلف",
+  "confidence": 85,
+  "watering": "طريقة الري وتفاصيلها بالعربية",
+  "light": "متطلبات الإضاءة بالعربية",
+  "temperature": "درجة الحرارة المناسبة بالعربية",
+  "description": "وصف تفصيلي للنبات بالعربية",
+  "soil": "نوع التربة المناسبة بالعربية",
+  "environment": "البيئة المناسبة بالعربية",
+  "careGuide": "دليل العناية الشامل بالعربية"
 }
 
-لا تترك الحقول فارغة. إن لم تكن متأكداً تماماً، أعطِ أفضل تخمين واقعي مع قيم عناية عامة مناسبة.`
+confidence رقم صحيح من 0 إلى 100.`
+
+/** Forced structured output schema for Gemini JSON mode. */
+const PLANT_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    name: { type: SchemaType.STRING, description: 'Common Arabic plant name' },
+    scientificName: {
+      type: SchemaType.STRING,
+      description: 'Latin binomial scientific name',
+    },
+    confidence: {
+      type: SchemaType.NUMBER,
+      description: 'Identification confidence 0-100',
+    },
+    watering: { type: SchemaType.STRING },
+    light: { type: SchemaType.STRING },
+    temperature: { type: SchemaType.STRING },
+    description: { type: SchemaType.STRING },
+    soil: { type: SchemaType.STRING },
+    environment: { type: SchemaType.STRING },
+    careGuide: { type: SchemaType.STRING },
+  },
+  required: [
+    'name',
+    'scientificName',
+    'confidence',
+    'watering',
+    'light',
+    'temperature',
+    'description',
+    'soil',
+    'environment',
+    'careGuide',
+  ],
+}
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
@@ -104,18 +143,20 @@ export function displayPlantCommonName(
   candidate: PlantIdentificationCandidate | null | undefined,
   scientificFallback?: string | null,
 ): string {
-  const firstCommon = candidate?.commonNames?.[0]?.trim()
-  if (firstCommon) return firstCommon
+  const named = candidate?.name?.trim() || candidate?.commonNames?.[0]?.trim()
+  if (named) return named
 
   const scientific =
     candidate?.scientificName?.trim() || scientificFallback?.trim() || ''
   if (scientific) return scientific
 
-  return FALLBACK_COMMON_NAME
+  return 'نتيجة التعريف'
 }
 
 export function confidencePercent(score: number): number {
   if (!Number.isFinite(score)) return 0
+  // Accept either 0–1 or 0–100 inputs
+  if (score > 1) return Math.round(Math.min(Math.max(score, 0), 100))
   return Math.round(Math.min(Math.max(score, 0), 1) * 100)
 }
 
@@ -123,31 +164,39 @@ export function summarizePrimaryCandidate(
   outcome: Extract<PlantIdentificationOutcome, { ok: true }>,
 ): PlantIdentificationPrimarySummary {
   const primary = outcome.candidates?.[0]
+  const name =
+    primary?.name?.trim() ||
+    primary?.commonNames?.[0]?.trim() ||
+    primary?.scientificName?.trim() ||
+    outcome.bestMatch?.trim() ||
+    'نتيجة التعريف'
   const scientificName =
     primary?.scientificName?.trim() ||
     outcome.bestMatch?.trim() ||
-    FALLBACK_SCIENTIFIC_NAME
+    name
   const commonNames =
     primary?.commonNames && primary.commonNames.length > 0
       ? primary.commonNames
-      : [scientificName]
-  const commonArabicNames = commonNames.filter((name) =>
-    ARABIC_SCRIPT.test(name ?? ''),
-  )
+      : [name]
+  const commonArabicNames = commonNames.filter((n) => ARABIC_SCRIPT.test(n ?? ''))
   const score = primary?.score ?? 0
 
   return {
+    name,
     scientificName,
     commonNames,
     commonArabicNames,
     family: primary?.family ?? null,
-    confidencePercent: confidencePercent(score),
+    confidencePercent: primary?.confidencePercent ?? confidencePercent(score),
     score,
-    description: primary?.description ?? null,
+    description: primary?.description ?? '',
+    watering: primary?.watering ?? '',
+    light: primary?.light ?? '',
+    temperature: primary?.temperature ?? '',
+    soil: primary?.soil ?? '',
+    environment: primary?.environment ?? '',
+    careGuide: primary?.careGuide ?? '',
     healthStatus: primary?.healthStatus ?? null,
-    watering: primary?.watering ?? null,
-    light: primary?.light ?? null,
-    temperature: primary?.temperature ?? null,
   }
 }
 
@@ -180,7 +229,7 @@ function cleanBase64(base64Image: string): string {
     .replace(/\s+/g, '')
 }
 
-// ─── Internal: JSON parsing (markdown-safe, schema-tolerant) ─────────────────
+// ─── Internal: robust JSON extraction ────────────────────────────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -189,7 +238,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return null
 }
 
-/** Coerce Gemini values (string | number | array | shallow object) to text. */
 function coerceToText(value: unknown): string | null {
   if (value === null || value === undefined) return null
 
@@ -211,7 +259,6 @@ function coerceToText(value: unknown): string | null {
 
   const record = asRecord(value)
   if (record) {
-    // Prefer known text-ish nested keys inside care objects
     for (const key of [
       'text',
       'value',
@@ -224,11 +271,11 @@ function coerceToText(value: unknown): string | null {
       'details',
       'instruction',
       'note',
+      'steps',
     ]) {
       const nested = coerceToText(record[key])
       if (nested) return nested
     }
-
     const parts = Object.values(record)
       .map((item) => coerceToText(item))
       .filter((item): item is string => Boolean(item))
@@ -238,47 +285,21 @@ function coerceToText(value: unknown): string | null {
   return null
 }
 
-function readOptionalString(value: unknown): string | null {
-  return coerceToText(value)
-}
-
-function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
-  if (!healthStatus) return 0.7
-  const match = healthStatus.match(/(\d{1,3})\s*%/)
-  if (match?.[1]) {
-    const pct = Number.parseInt(match[1], 10)
-    if (Number.isFinite(pct)) {
-      return Math.min(Math.max(pct, 0), 100) / 100
+function coerceConfidence(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value <= 1) return Math.round(value * 100)
+    return Math.round(Math.min(Math.max(value, 0), 100))
+  }
+  if (typeof value === 'string') {
+    const match = value.match(/(\d{1,3})/)
+    if (match?.[1]) {
+      const pct = Number.parseInt(match[1], 10)
+      if (Number.isFinite(pct)) return Math.min(Math.max(pct, 0), 100)
     }
   }
-  const lower = healthStatus.toLowerCase()
-  if (
-    lower.includes('high') ||
-    lower.includes('عالي') ||
-    lower.includes('مرتفع') ||
-    lower.includes('مؤكد')
-  ) {
-    return 0.88
-  }
-  if (
-    lower.includes('medium') ||
-    lower.includes('متوسط') ||
-    lower.includes('moderate')
-  ) {
-    return 0.65
-  }
-  if (
-    lower.includes('low') ||
-    lower.includes('منخفض') ||
-    lower.includes('غير متأكد') ||
-    lower.includes('uncertain')
-  ) {
-    return 0.4
-  }
-  return 0.7
+  return null
 }
 
-/** Normalize object keys for case / punctuation / Arabic-insensitive lookup. */
 function normalizeKey(key: string): string {
   return key
     .normalize('NFKC')
@@ -294,9 +315,7 @@ const FIELD_ALIASES = {
     'commonname',
     'common_name',
     'arabicname',
-    'arabic_name',
     'plantname',
-    'plant_name',
     'displayname',
     'title',
     'الاسم',
@@ -311,9 +330,16 @@ const FIELD_ALIASES = {
     'latin_name',
     'binomial',
     'species',
-    'taxonomy',
     'الاسمالعلمي',
     'الاسماللاتيني',
+  ],
+  confidence: [
+    'confidence',
+    'confidencepercent',
+    'score',
+    'certainty',
+    'probability',
+    'الثقة',
   ],
   watering: [
     'watering',
@@ -350,22 +376,33 @@ const FIELD_ALIASES = {
     'summary',
     'about',
     'overview',
-    'details',
-    'care',
-    'careguide',
-    'care_guide',
     'الوصف',
     'وصف',
-    'العناية',
   ],
-  healthStatus: [
-    'healthstatus',
-    'health_status',
-    'confidence',
-    'certainty',
-    'score',
-    'الثقة',
-    'الحالة',
+  soil: [
+    'soil',
+    'soiltype',
+    'soiltypes',
+    'soil_type',
+    'التربة',
+    'نوعالتربة',
+  ],
+  environment: [
+    'environment',
+    'environments',
+    'habitat',
+    'climate',
+    'البيئة',
+    'البيئةالمناسبة',
+  ],
+  careGuide: [
+    'careguide',
+    'care_guide',
+    'care',
+    'careinstructions',
+    'caretips',
+    'العناية',
+    'دليلالعناية',
   ],
 } as const
 
@@ -378,7 +415,6 @@ function buildNormalizedMap(
   for (const [key, value] of Object.entries(record)) {
     const normalized = normalizeKey(key)
     if (!normalized) continue
-    // Prefer first non-empty text-ish value if duplicates exist
     if (!map.has(normalized) || coerceToText(map.get(normalized)) === null) {
       map.set(normalized, value)
     }
@@ -386,10 +422,7 @@ function buildNormalizedMap(
   return map
 }
 
-function lookupField(
-  map: Map<string, unknown>,
-  field: PlantField,
-): string | null {
+function lookupText(map: Map<string, unknown>, field: PlantField): string | null {
   for (const alias of FIELD_ALIASES[field]) {
     const value = coerceToText(map.get(normalizeKey(alias)))
     if (value) return value
@@ -397,7 +430,14 @@ function lookupField(
   return null
 }
 
-/** Containers Gemini often wraps the plant object in. */
+function lookupConfidence(map: Map<string, unknown>): number | null {
+  for (const alias of FIELD_ALIASES.confidence) {
+    const value = coerceConfidence(map.get(normalizeKey(alias)))
+    if (value !== null) return value
+  }
+  return null
+}
+
 const WRAPPER_KEYS = new Set(
   [
     'plant',
@@ -408,31 +448,24 @@ const WRAPPER_KEYS = new Set(
     'payload',
     'identification',
     'identifiedplant',
-    'identified_plant',
     'species',
     'info',
     'details',
     'output',
     'analysis',
-    'prediction',
   ].map(normalizeKey),
 )
 
 const CARE_WRAPPER_KEYS = new Set(
-  [
-    'care',
-    'careinfo',
-    'care_info',
-    'careguide',
-    'care_guide',
-    'careinstructions',
-    'needs',
-    'requirements',
-    'العناية',
-  ].map(normalizeKey),
+  ['care', 'careinfo', 'care_info', 'careguide', 'needs', 'requirements', 'العناية'].map(
+    normalizeKey,
+  ),
 )
 
-function unwrapPlantRecord(value: unknown, depth = 0): Record<string, unknown> | null {
+function unwrapPlantRecord(
+  value: unknown,
+  depth = 0,
+): Record<string, unknown> | null {
   if (depth > 4) return null
 
   if (Array.isArray(value)) {
@@ -447,9 +480,9 @@ function unwrapPlantRecord(value: unknown, depth = 0): Record<string, unknown> |
   if (!record) return null
 
   const map = buildNormalizedMap(record)
-  const hasDirectName =
-    lookupField(map, 'name') || lookupField(map, 'scientificName')
-  if (hasDirectName) return record
+  if (lookupText(map, 'name') || lookupText(map, 'scientificName')) {
+    return record
+  }
 
   for (const [key, nested] of Object.entries(record)) {
     if (!WRAPPER_KEYS.has(normalizeKey(key))) continue
@@ -460,19 +493,19 @@ function unwrapPlantRecord(value: unknown, depth = 0): Record<string, unknown> |
   return record
 }
 
-/** Strip ``` / ```json fences and isolate the first JSON object/array. */
-function cleanJsonText(raw: string): string {
+/** Strip markdown fences, BOM, smart quotes; isolate JSON object/array. */
+export function extractJsonPayload(raw: string): string {
   let text = raw.trim()
   text = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '')
-
-  // Smart quotes → standard quotes
   text = text.replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'")
 
   const fenced = text.match(/```(?:json|javascript|js)?\s*([\s\S]*?)```/i)
   if (fenced?.[1]) {
     text = fenced[1].trim()
   } else if (text.startsWith('```')) {
-    text = text.replace(/^```(?:json|javascript|js)?\s*/i, '').replace(/\s*```$/i, '')
+    text = text
+      .replace(/^```(?:json|javascript|js)?\s*/i, '')
+      .replace(/\s*```$/i, '')
   }
 
   const objStart = text.indexOf('{')
@@ -489,30 +522,20 @@ function cleanJsonText(raw: string): string {
   const opener = text[start]
   const closer = opener === '[' ? ']' : '}'
   const end = text.lastIndexOf(closer)
-  if (end > start) {
-    return text.slice(start, end + 1)
-  }
+  if (end > start) return text.slice(start, end + 1)
   return text.slice(start)
 }
 
-/** Soft-repair common Gemini JSON issues (trailing commas, JS-style quotes). */
 function softRepairJson(text: string): string {
-  return (
-    text
-      // trailing commas before } or ]
-      .replace(/,\s*([}\]])/g, '$1')
-      // single-quoted keys → double-quoted
-      .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
-      // single-quoted string values → double-quoted
-      .replace(/(:\s*)'([^']*)'/g, '$1"$2"')
-  )
+  return text
+    .replace(/,\s*([}\]])/g, '$1')
+    .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
+    .replace(/(:\s*)'([^']*)'/g, '$1"$2"')
 }
 
 function tryParseJson(raw: string): unknown | null {
-  const cleaned = cleanJsonText(raw)
-  const attempts = [cleaned, softRepairJson(cleaned)]
-
-  for (const attempt of attempts) {
+  const cleaned = extractJsonPayload(raw)
+  for (const attempt of [cleaned, softRepairJson(cleaned)]) {
     try {
       return JSON.parse(attempt)
     } catch {
@@ -522,21 +545,18 @@ function tryParseJson(raw: string): unknown | null {
   return null
 }
 
-/**
- * Last-resort: pull quoted key/value pairs with a regex when JSON.parse fails.
- * Handles markdown wrappers and slightly broken JSON.
- */
 function extractFieldsViaRegex(raw: string): GeminiPlantJson | null {
-  const text = cleanJsonText(raw)
+  const text = extractJsonPayload(raw)
   const found: Record<string, string> = {}
-
   const pairRe =
-    /["']([^"']+)["']\s*:\s*(?:["']([^"']*)["']|([^,}\]\n]+))/g
+    /["']([^"']+)["']\s*:\s*(?:["']([^"']*)["']|(-?\d+(?:\.\d+)?)|([^,}\]\n]+))/g
 
   let match: RegExpExecArray | null
   while ((match = pairRe.exec(text)) !== null) {
     const key = normalizeKey(match[1] ?? '')
-    const value = (match[2] ?? match[3] ?? '').trim().replace(/^["']|["']$/g, '')
+    const value = (match[2] ?? match[3] ?? match[4] ?? '')
+      .trim()
+      .replace(/^["']|["']$/g, '')
     if (!key || !value || value === 'null' || value === 'undefined') continue
     if (!found[key]) found[key] = value
   }
@@ -544,28 +564,7 @@ function extractFieldsViaRegex(raw: string): GeminiPlantJson | null {
   if (Object.keys(found).length === 0) return null
 
   const map = new Map<string, unknown>(Object.entries(found))
-  const plant: GeminiPlantJson = {
-    name: lookupField(map, 'name') ?? undefined,
-    scientificName: lookupField(map, 'scientificName') ?? undefined,
-    watering: lookupField(map, 'watering') ?? undefined,
-    light: lookupField(map, 'light') ?? undefined,
-    temperature: lookupField(map, 'temperature') ?? undefined,
-    description: lookupField(map, 'description') ?? undefined,
-    health_status: lookupField(map, 'healthStatus') ?? undefined,
-  }
-
-  if (
-    !plant.name &&
-    !plant.scientificName &&
-    !plant.watering &&
-    !plant.light &&
-    !plant.temperature &&
-    !plant.description
-  ) {
-    return null
-  }
-
-  return plant
+  return mapToGeminiPlant(map)
 }
 
 function mergeCareWrapper(
@@ -577,10 +576,9 @@ function mergeCareWrapper(
     if (!CARE_WRAPPER_KEYS.has(normalizeKey(key))) continue
     const careRecord = asRecord(value)
     if (!careRecord) {
-      // Sometimes "care" is a single description string
       const careText = coerceToText(value)
-      if (careText && !map.has(normalizeKey('description'))) {
-        map.set(normalizeKey('description'), careText)
+      if (careText && !map.has(normalizeKey('careGuide'))) {
+        map.set(normalizeKey('careGuide'), careText)
       }
       continue
     }
@@ -595,180 +593,195 @@ function mergeCareWrapper(
   return map
 }
 
-function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
+function mapToGeminiPlant(map: Map<string, unknown>): GeminiPlantJson | null {
+  const plant: GeminiPlantJson = {
+    name: lookupText(map, 'name') ?? undefined,
+    scientificName: lookupText(map, 'scientificName') ?? undefined,
+    confidence: lookupConfidence(map) ?? undefined,
+    watering: lookupText(map, 'watering') ?? undefined,
+    light: lookupText(map, 'light') ?? undefined,
+    temperature: lookupText(map, 'temperature') ?? undefined,
+    description: lookupText(map, 'description') ?? undefined,
+    soil: lookupText(map, 'soil') ?? undefined,
+    environment: lookupText(map, 'environment') ?? undefined,
+    careGuide: lookupText(map, 'careGuide') ?? undefined,
+    common_name: lookupText(map, 'name') ?? undefined,
+    scientific_name: lookupText(map, 'scientificName') ?? undefined,
+  }
+
+  const hasAny = Boolean(
+    plant.name ||
+      plant.scientificName ||
+      plant.watering ||
+      plant.light ||
+      plant.temperature ||
+      plant.description ||
+      plant.soil ||
+      plant.environment ||
+      plant.careGuide,
+  )
+
+  return hasAny ? plant : null
+}
+
+/**
+ * Bulletproof Gemini JSON → structured plant object.
+ * Handles raw JSON, markdown fences, wrappers, alternate keys, and partial payloads.
+ */
+export function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
   const parsed = tryParseJson(rawText)
 
   if (parsed !== null) {
     const plantRecord = unwrapPlantRecord(parsed)
     if (plantRecord) {
-      const map = mergeCareWrapper(plantRecord)
-      const plant: GeminiPlantJson = {
-        name: lookupField(map, 'name') ?? undefined,
-        scientificName: lookupField(map, 'scientificName') ?? undefined,
-        watering: lookupField(map, 'watering') ?? undefined,
-        light: lookupField(map, 'light') ?? undefined,
-        temperature: lookupField(map, 'temperature') ?? undefined,
-        description: lookupField(map, 'description') ?? undefined,
-        health_status: lookupField(map, 'healthStatus') ?? undefined,
-        common_name: lookupField(map, 'name') ?? undefined,
-        scientific_name: lookupField(map, 'scientificName') ?? undefined,
-      }
-
-      if (
-        plant.name ||
-        plant.scientificName ||
-        plant.watering ||
-        plant.light ||
-        plant.temperature ||
-        plant.description
-      ) {
-        return plant
-      }
+      const mapped = mapToGeminiPlant(mergeCareWrapper(plantRecord))
+      if (mapped) return mapped
     }
   }
 
   const regexFallback = extractFieldsViaRegex(rawText)
   if (regexFallback) {
-    console.warn('[Gemini] used regex fallback parser', {
-      preview: rawText.slice(0, 300),
-    })
+    console.warn('[Gemini] used regex fallback parser')
     return regexFallback
   }
 
-  console.warn('[Gemini] JSON parse failed', {
-    preview: rawText.slice(0, 400),
-  })
   return null
+}
+
+/**
+ * Fill missing care fields from sibling values so UI cards never stay empty
+ * after a successful (even partial) parse.
+ */
+function ensureNonEmptyFields(plant: GeminiPlantJson): Required<
+  Pick<
+    GeminiPlantJson,
+    | 'name'
+    | 'scientificName'
+    | 'watering'
+    | 'light'
+    | 'temperature'
+    | 'description'
+    | 'soil'
+    | 'environment'
+    | 'careGuide'
+  >
+> & { confidence: number } {
+  const name =
+    plant.name?.trim() ||
+    plant.common_name?.trim() ||
+    plant.scientificName?.trim() ||
+    plant.scientific_name?.trim() ||
+    'نبات تم التعرف عليه'
+
+  const scientificName =
+    plant.scientificName?.trim() ||
+    plant.scientific_name?.trim() ||
+    name
+
+  const description =
+    plant.description?.trim() ||
+    `نبات معروف باسم ${name}. راجع إرشادات العناية أدناه.`
+
+  const watering =
+    plant.watering?.trim() || 'الري حسب حاجة التربة مع تجنب الإفراط.'
+  const light =
+    plant.light?.trim() || 'إضاءة ساطعة غير مباشرة إلى شمس معتدلة.'
+  const temperature =
+    plant.temperature?.trim() || 'درجة حرارة معتدلة مناسبة لمعظم النباتات المنزلية.'
+  const soil =
+    plant.soil?.trim() || 'تربة جيدة التصريف غنية بالمواد العضوية.'
+  const environment =
+    plant.environment?.trim() || 'بيئة داخلية أو خارجية حسب نوع النبات.'
+
+  const careGuide =
+    plant.careGuide?.trim() ||
+    [
+      `الري: ${watering}`,
+      `الإضاءة: ${light}`,
+      `الحرارة: ${temperature}`,
+      `التربة: ${soil}`,
+      `البيئة: ${environment}`,
+      description,
+    ].join('\n')
+
+  const confidence =
+    typeof plant.confidence === 'number' && Number.isFinite(plant.confidence)
+      ? Math.min(Math.max(Math.round(plant.confidence), 1), 100)
+      : 75
+
+  return {
+    name,
+    scientificName,
+    confidence,
+    watering,
+    light,
+    temperature,
+    description,
+    soil,
+    environment,
+    careGuide,
+  }
 }
 
 function mapGeminiPlantToCandidate(
   plant: GeminiPlantJson,
 ): PlantIdentificationCandidate {
-  const commonName =
-    readOptionalString(plant.name) ||
-    readOptionalString(plant.common_name) ||
-    FALLBACK_COMMON_NAME
+  const filled = ensureNonEmptyFields(plant)
 
-  const rawScientific =
-    readOptionalString(plant.scientificName) ||
-    readOptionalString(plant.scientific_name) ||
-    ''
+  const rawScientific = filled.scientificName
+  const binomial = extractBinomialScientificName(rawScientific)
+  const scientificName = binomial || rawScientific
 
-  // Keep Latin binomial when possible; never wipe a usable scientific string
-  const binomial = rawScientific
-    ? extractBinomialScientificName(rawScientific)
-    : ''
-  const scientificName =
-    binomial || rawScientific || (commonName !== FALLBACK_COMMON_NAME ? commonName : FALLBACK_SCIENTIFIC_NAME)
-
-  const description = readOptionalString(plant.description)
-  const watering = readOptionalString(plant.watering)
-  const light = readOptionalString(plant.light)
-  const temperature = readOptionalString(plant.temperature)
-  const healthStatus = readOptionalString(plant.health_status)
-  const score = parseConfidenceFromHealthStatus(healthStatus) || 0.82
   const genus =
-    scientificName &&
-    scientificName !== FALLBACK_SCIENTIFIC_NAME &&
-    /^[A-Za-z]/.test(scientificName)
+    scientificName && /^[A-Za-z]/.test(scientificName)
       ? scientificName.split(/\s+/)[0] ?? null
       : null
 
+  const score = filled.confidence / 100
+
   return {
+    name: filled.name,
     scientificName,
     scientificNameAuthorship: null,
-    commonNames: [commonName],
+    commonNames: [filled.name],
     family: null,
     genus,
     score,
-    confidencePercent: confidencePercent(score),
+    confidencePercent: filled.confidence,
     taxonId: null,
-    description,
-    healthStatus,
-    watering,
-    light,
-    temperature,
+    description: filled.description,
+    watering: filled.watering,
+    light: filled.light,
+    temperature: filled.temperature,
+    soil: filled.soil,
+    environment: filled.environment,
+    careGuide: filled.careGuide,
+    healthStatus: plant.health_status?.trim() || `${filled.confidence}%`,
   }
 }
 
-function outcomeFromGeminiText(text: string): PlantIdentificationOutcome | null {
+function outcomeFromGeminiText(
+  text: string,
+): Extract<PlantIdentificationOutcome, { ok: true }> | null {
   const trimmed = text.trim()
   if (!trimmed) return null
 
+  console.log('[Gemini] RAW response text:', trimmed)
+
   const plant = parseGeminiPlantJson(trimmed)
+  console.log('[Gemini] PARSED plant object:', plant)
+
   if (!plant) {
-    console.warn('[Gemini] could not map response to plant JSON', {
-      preview: trimmed.slice(0, 500),
-    })
+    console.warn('[Gemini] parse produced null — raw preview:', trimmed.slice(0, 500))
     return null
   }
 
   const candidate = mapGeminiPlantToCandidate(plant)
-  const displayName = candidate.commonNames[0]?.trim() || ''
-  const scientific = candidate.scientificName?.trim() || ''
-
-  const hasRealName =
-    (displayName.length > 0 && displayName !== FALLBACK_COMMON_NAME) ||
-    (scientific.length > 0 && scientific !== FALLBACK_SCIENTIFIC_NAME)
-
-  const hasCarePayload = Boolean(
-    candidate.description ||
-      candidate.watering ||
-      candidate.light ||
-      candidate.temperature,
-  )
-
-  if (!hasRealName && !hasCarePayload) return null
-
-  console.info('[Gemini] mapped plant fields', {
-    name: displayName,
-    scientificName: scientific,
-    watering: candidate.watering,
-    light: candidate.light,
-    temperature: candidate.temperature,
-    hasDescription: Boolean(candidate.description),
-  })
+  console.log('[Gemini] MAPPED candidate for UI:', candidate)
 
   return {
     ok: true,
-    bestMatch: scientific || displayName || FALLBACK_SCIENTIFIC_NAME,
-    candidates: [candidate],
-    identifiedAt: new Date().toISOString(),
-  }
-}
-
-/**
- * Soft success payload so the UI never hangs or shows raw 503 / API codes.
- * Completes the analyze flow with a clear Arabic explanation.
- */
-function buildGracefulFallbackSuccess(): Extract<
-  PlantIdentificationOutcome,
-  { ok: true }
-> {
-  const candidate: PlantIdentificationCandidate = {
-    scientificName: FALLBACK_SCIENTIFIC_NAME,
-    scientificNameAuthorship: null,
-    commonNames: [FALLBACK_COMMON_NAME],
-    family: null,
-    genus: null,
-    score: 0.35,
-    confidencePercent: 35,
-    taxonId: null,
-    description:
-      'تعذّر إكمال التعريف الآن. يُرجى إعادة المحاولة بعد قليل بصورة أوضح وإضاءة جيدة.',
-    healthStatus: 'إعادة المحاولة مُستحسنة',
-    watering: null,
-    light: null,
-    temperature: null,
-  }
-
-  console.warn(
-    '[Gemini] all models/retries exhausted — returning graceful UI fallback',
-  )
-
-  return {
-    ok: true,
-    bestMatch: candidate.scientificName,
+    bestMatch: candidate.scientificName || candidate.name,
     candidates: [candidate],
     identifiedAt: new Date().toISOString(),
   }
@@ -810,9 +823,11 @@ function createModel(apiKey: string, modelName: string): GenerativeModel {
   const client = new GoogleGenerativeAI(apiKey)
   return client.getGenerativeModel({
     model: modelName,
+    systemInstruction: SYSTEM_INSTRUCTION,
     generationConfig: {
       temperature: 0.2,
       responseMimeType: 'application/json',
+      responseSchema: PLANT_RESPONSE_SCHEMA,
     },
   })
 }
@@ -823,7 +838,7 @@ async function generateOnce(
   mimeType: string,
 ): Promise<string> {
   const result = await model.generateContent([
-    { text: GEMINI_IDENTIFY_PROMPT },
+    { text: USER_IDENTIFY_PROMPT },
     {
       inlineData: {
         mimeType: mimeType || 'image/jpeg',
@@ -835,10 +850,6 @@ async function generateOnce(
   return result.response.text()
 }
 
-/**
- * Silent retry wrapper: up to MAX_ATTEMPTS_PER_MODEL with fixed backoff.
- * Never throws to the UI — returns null when the model cannot produce text.
- */
 async function generateWithRetries(
   modelName: string,
   apiKey: string,
@@ -850,6 +861,12 @@ async function generateWithRetries(
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
     try {
       const text = await generateOnce(model, base64Image, mimeType)
+      console.log('[Gemini] generateOnce raw text', {
+        modelName,
+        attempt,
+        length: text.length,
+        preview: text.slice(0, 400),
+      })
       if (text.trim()) return text
       console.warn('[Gemini] empty response', { modelName, attempt })
     } catch (error) {
@@ -859,19 +876,49 @@ async function generateWithRetries(
         overloaded: isOverloadedError(error),
         message: error instanceof Error ? error.message : String(error),
       })
+
+      // Some models reject responseSchema — retry once without schema
+      if (
+        attempt === 1 &&
+        String(error instanceof Error ? error.message : error)
+          .toLowerCase()
+          .includes('schema')
+      ) {
+        try {
+          const client = new GoogleGenerativeAI(apiKey)
+          const fallbackModel = client.getGenerativeModel({
+            model: modelName,
+            systemInstruction: SYSTEM_INSTRUCTION,
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          })
+          const text = await generateOnce(fallbackModel, base64Image, mimeType)
+          if (text.trim()) {
+            console.log('[Gemini] schema-less fallback succeeded', { modelName })
+            return text
+          }
+        } catch (fallbackError) {
+          console.warn('[Gemini] schema-less fallback failed', {
+            modelName,
+            message:
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError),
+          })
+        }
+      }
     }
 
     if (attempt < MAX_ATTEMPTS_PER_MODEL) {
-      await sleep(RETRY_DELAY_MS * attempt) // 1s, then 2s
+      await sleep(RETRY_DELAY_MS * attempt)
     }
   }
 
   return null
 }
 
-/**
- * Try each model in the waterfall. Returns parsed success or null.
- */
 async function identifyWithModelWaterfall(
   apiKey: string,
   base64Image: string,
@@ -891,7 +938,7 @@ async function identifyWithModelWaterfall(
 
     const outcome = outcomeFromGeminiText(text)
     if (outcome?.ok) {
-      console.info('[Gemini] top match', {
+      console.log('[Gemini] SUCCESS identification', {
         modelName,
         summary: summarizePrimaryCandidate(outcome),
       })
@@ -907,8 +954,9 @@ async function identifyWithModelWaterfall(
 // ─── Public: identify ────────────────────────────────────────────────────────
 
 /**
- * Identify a plant via `@google/generative-ai` with a silent model waterfall.
- * Users never see 503 / busy errors — failures become a soft success fallback.
+ * Identify a plant via `@google/generative-ai` with structured JSON output.
+ * Partial parses are filled field-by-field — never replaced with mock plant names.
+ * Total API failure returns a clean Arabic error (no fake "نبات غير محدد" success).
  */
 export async function identifyPlant(
   file: File,
@@ -968,18 +1016,16 @@ export async function identifyPlant(
   const mimeType = resolveMimeType(uploadFile)
 
   try {
-    const success = await identifyWithModelWaterfall(
-      apiKey,
-      base64,
-      mimeType,
-    )
+    const success = await identifyWithModelWaterfall(apiKey, base64, mimeType)
     if (success) return success
   } catch (error) {
-    // Absolute last resort — never leak API status codes to the UI
-    console.error('[Gemini] unexpected identify failure (suppressed)', error)
+    console.error('[Gemini] unexpected identify failure', error)
   }
 
-  return buildGracefulFallbackSuccess()
+  return failure(
+    'API_ERROR',
+    'تعذّر إكمال التعريف الآن. أعد المحاولة بعد قليل بصورة أوضح وإضاءة جيدة.',
+  )
 }
 
 export async function identifyPlantOrThrow(

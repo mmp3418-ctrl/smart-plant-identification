@@ -138,12 +138,14 @@ export function IdentifyPage() {
         plantId: match.plant?.id ?? top?.scientificName ?? 'unknown',
         plantName:
           match.plant?.arabic_name?.trim() ||
+          top?.name?.trim() ||
           displayPlantCommonName(top, identification.bestMatch),
         scientificName:
           match.plant?.scientific_name ||
           top?.scientificName ||
           identification.bestMatch ||
-          'نبات غير محدد',
+          top?.name ||
+          'unknown',
         confidence: top?.score ?? 0,
         imagePreview: preview,
       })

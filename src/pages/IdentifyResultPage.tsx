@@ -9,6 +9,8 @@ import {
   Thermometer,
   AlertTriangle,
   BookOpen,
+  Sprout,
+  Trees,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
 import {
@@ -30,6 +32,16 @@ function isIdentifySessionResult(value: unknown): value is IdentifySessionResult
   )
 }
 
+function pickText(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed && trimmed !== '—') return trimmed
+  }
+  return null
+}
+
 export function IdentifyResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -46,52 +58,42 @@ export function IdentifyResultPage() {
     ? (top.confidencePercent ?? confidencePercent(top.score ?? 0))
     : 0
 
-  const pickText = (...values: Array<string | null | undefined>): string | null => {
-    for (const value of values) {
-      const trimmed = value?.trim()
-      if (trimmed && trimmed !== 'نبات غير محدد' && trimmed !== '—') {
-        return trimmed
-      }
-    }
-    return null
-  }
-
-  // Prefer Gemini candidate fields, then local DB enrichment when present
   const displayArabic =
     pickText(
+      top?.name,
       top?.commonNames?.[0],
       plant?.arabic_name,
       displayPlantCommonName(top, bestMatch),
-    ) || 'نبات غير محدد'
+    ) || 'نتيجة التعريف'
 
   const displayScientific =
-    pickText(
-      top?.scientificName,
-      plant?.scientific_name,
-      bestMatch,
-    ) || '—'
+    pickText(top?.scientificName, plant?.scientific_name, bestMatch) || '—'
 
   const wateringValue =
     pickText(top?.watering, plant?.watering) || '—'
-  const lightValue =
-    pickText(top?.light, plant?.sunlight) || '—'
+  const lightValue = pickText(top?.light, plant?.sunlight) || '—'
   const temperatureValue =
     pickText(top?.temperature, plant?.temperature_range) || '—'
-  const descriptionValue =
-    pickText(top?.description, plant?.description)
+  const descriptionValue = pickText(top?.description, plant?.description)
+  const soilValue = pickText(top?.soil)
+  const environmentValue = pickText(top?.environment)
+  const careGuideValue = pickText(top?.careGuide)
 
   const geminiCareSteps = [
-    wateringValue !== '—'
+    careGuideValue
+      ? { id: 'gemini-care', label: 'دليل العناية', text: careGuideValue }
+      : null,
+    !careGuideValue && wateringValue !== '—'
       ? { id: 'gemini-water', label: 'الري', text: wateringValue }
       : null,
-    lightValue !== '—'
+    !careGuideValue && lightValue !== '—'
       ? { id: 'gemini-light', label: 'الإضاءة', text: lightValue }
       : null,
-    temperatureValue !== '—'
+    !careGuideValue && temperatureValue !== '—'
       ? { id: 'gemini-temp', label: 'الحرارة', text: temperatureValue }
       : null,
-    descriptionValue
-      ? { id: 'gemini-desc', label: 'العناية', text: descriptionValue }
+    !careGuideValue && descriptionValue
+      ? { id: 'gemini-desc', label: 'الوصف', text: descriptionValue }
       : null,
   ].filter((step): step is { id: string; label: string; text: string } =>
     Boolean(step),
@@ -158,16 +160,6 @@ export function IdentifyResultPage() {
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
               {descriptionValue}
             </p>
-          ) : (
-            <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
-              تم التعرف على النبات. يمكنك مراجعة إرشادات العناية أدناه.
-            </p>
-          )}
-
-          {top?.healthStatus ? (
-            <p className="mt-2 text-xs text-muted dark:text-stone-400">
-              الحالة / الثقة: {top.healthStatus}
-            </p>
           ) : null}
 
           <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
@@ -188,6 +180,25 @@ export function IdentifyResultPage() {
             />
           </div>
 
+          {(soilValue || environmentValue) && (
+            <div className="mt-3 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+              {soilValue ? (
+                <MetaTile
+                  icon={<Sprout className="size-4" />}
+                  label="التربة"
+                  value={soilValue}
+                />
+              ) : null}
+              {environmentValue ? (
+                <MetaTile
+                  icon={<Trees className="size-4" />}
+                  label="البيئة"
+                  value={environmentValue}
+                />
+              ) : null}
+            </div>
+          )}
+
           {plant ? (
             <div className="mt-5">
               <Link to={`/plants/${plant.id}`}>
@@ -200,19 +211,21 @@ export function IdentifyResultPage() {
         </Card>
       </div>
 
-      {/* Soil & environment */}
+      {/* Soil & environment — Gemini text first, then DB badges */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card glass padding="lg">
           <CardHeader
             title="أنواع التربة المناسبة"
-            description="من قاعدة البيانات المحلية إن وُجدت"
+            description={
+              match.soilTypes.length > 0
+                ? 'من قاعدة البيانات المحلية'
+                : soilValue
+                  ? 'من نتيجة التعريف'
+                  : undefined
+            }
           />
           <CardContent>
-            {match.soilTypes.length === 0 ? (
-              <p className="text-sm text-muted dark:text-stone-400">
-                لا توجد بيانات تربة مرتبطة بهذا النبات حالياً.
-              </p>
-            ) : (
+            {match.soilTypes.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {match.soilTypes.map((soil) => (
                   <Badge key={soil.id} variant="soil">
@@ -220,6 +233,14 @@ export function IdentifyResultPage() {
                   </Badge>
                 ))}
               </div>
+            ) : soilValue ? (
+              <p className="text-sm leading-relaxed text-muted dark:text-stone-300">
+                {soilValue}
+              </p>
+            ) : (
+              <p className="text-sm text-muted dark:text-stone-400">
+                لا توجد بيانات تربة مرتبطة بهذا النبات حالياً.
+              </p>
             )}
           </CardContent>
         </Card>
@@ -227,15 +248,17 @@ export function IdentifyResultPage() {
         <Card glass padding="lg">
           <CardHeader
             title="البيئات المناسبة"
-            description="ظروف النمو المرتبطة بالنبات"
+            description={
+              match.environments.length > 0
+                ? 'ظروف النمو المرتبطة بالنبات'
+                : environmentValue
+                  ? 'من نتيجة التعريف'
+                  : undefined
+            }
             action={<MapPin className="size-4 text-brand dark:text-emerald-300" />}
           />
           <CardContent>
-            {match.environments.length === 0 ? (
-              <p className="text-sm text-muted dark:text-stone-400">
-                لا توجد بيانات بيئة مرتبطة بهذا النبات حالياً.
-              </p>
-            ) : (
+            {match.environments.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {match.environments.map((env) => (
                   <Badge key={env.id} variant="sage">
@@ -243,12 +266,20 @@ export function IdentifyResultPage() {
                   </Badge>
                 ))}
               </div>
+            ) : environmentValue ? (
+              <p className="text-sm leading-relaxed text-muted dark:text-stone-300">
+                {environmentValue}
+              </p>
+            ) : (
+              <p className="text-sm text-muted dark:text-stone-400">
+                لا توجد بيانات بيئة مرتبطة بهذا النبات حالياً.
+              </p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Care guides — DB steps first, else Gemini care fields */}
+      {/* Care guides — DB steps first, else Gemini careGuide */}
       <Card className="mt-4" glass padding="lg">
         <CardHeader
           title="دليل العناية"
@@ -276,24 +307,21 @@ export function IdentifyResultPage() {
               ))}
             </ol>
           ) : geminiCareSteps.length > 0 ? (
-            <ol className="space-y-2.5">
-              {geminiCareSteps.map((step, index) => (
-                <li
+            <div className="space-y-3">
+              {geminiCareSteps.map((step) => (
+                <div
                   key={step.id}
-                  className="flex gap-3 text-sm leading-relaxed text-muted dark:text-stone-300"
+                  className="rounded-xl border border-white/20 dark:border-stone-700/55 bg-canvas/60 dark:bg-stone-900/40 px-4 py-3"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand dark:text-emerald-300">
-                    {index + 1}
-                  </span>
-                  <span>
-                    <span className="font-semibold text-ink dark:text-stone-100">
-                      {step.label}:{' '}
-                    </span>
+                  <p className="text-xs font-semibold text-brand dark:text-emerald-300">
+                    {step.label}
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-muted dark:text-stone-300">
                     {step.text}
-                  </span>
-                </li>
+                  </p>
+                </div>
               ))}
-            </ol>
+            </div>
           ) : (
             <p className="text-sm text-muted dark:text-stone-400">
               لا تتوفر تعليمات عناية لهذا النبات حالياً.
@@ -302,7 +330,6 @@ export function IdentifyResultPage() {
         </CardContent>
       </Card>
 
-      {/* Warnings from DB */}
       {plant?.warnings && plant.warnings.length > 0 ? (
         <Card className="mt-4" glass padding="lg">
           <CardHeader
@@ -326,7 +353,6 @@ export function IdentifyResultPage() {
         </Card>
       ) : null}
 
-      {/* Other candidates */}
       {candidates.length > 1 ? (
         <section className="mt-8">
           <h2 className="mb-3 text-base font-bold text-ink dark:text-stone-100">
@@ -345,7 +371,7 @@ export function IdentifyResultPage() {
                     {displayPlantCommonName(candidate)}
                   </p>
                   <p className="truncate text-xs italic text-muted dark:text-stone-300">
-                    {candidate?.scientificName ?? 'نبات غير محدد'}
+                    {candidate.scientificName || '—'}
                   </p>
                 </div>
                 <Badge variant="brand">
@@ -377,7 +403,9 @@ function MetaTile({
         {icon}
         <span className="text-xs font-semibold">{label}</span>
       </div>
-      <p className="mt-1 text-sm font-bold text-ink dark:text-stone-100">{value}</p>
+      <p className="mt-1 text-sm font-bold leading-snug text-ink dark:text-stone-100">
+        {value}
+      </p>
     </div>
   )
 }
