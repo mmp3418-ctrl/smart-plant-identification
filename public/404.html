@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>إعادة توجيه… | نبْتة</title>
+    <script>
+      (function () {
+        /**
+         * GitHub Pages serves this file for unknown paths.
+         * Convert a deep path into a HashRouter URL so the SPA boots correctly:
+         *   /smart-plant-identification/identify/result
+         * → /smart-plant-identification/#/identify/result
+         */
+        var base = '/smart-plant-identification'
+        var path = location.pathname || '/'
+        var search = location.search || ''
+        var hash = location.hash || ''
+
+        // Already on a hash route — bounce to index with the same hash
+        if (hash && hash !== '#') {
+          location.replace(base + '/' + hash + search)
+          return
+        }
+
+        var relative = path
+        if (relative.indexOf(base) === 0) {
+          relative = relative.slice(base.length) || '/'
+        }
+        if (relative.charAt(0) !== '/') {
+          relative = '/' + relative
+        }
+        // Drop trailing index.html if present
+        relative = relative.replace(/\/index\.html$/i, '/')
+        if (relative === '/404.html' || relative === '/404') {
+          relative = '/'
+        }
+
+        location.replace(base + '/#' + relative + search)
+      })()
+    </script>
+    <meta
+      http-equiv="refresh"
+      content="0; url=/smart-plant-identification/"
+    />
+  </head>
+  <body>
+    <p>جارٍ إعادة التوجيه إلى التطبيق…</p>
+    <p>
+      <a href="/smart-plant-identification/">العودة إلى نبْتة</a>
+    </p>
+  </body>
+</html>

@@ -14,6 +14,7 @@ import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
 import { useCamera } from '@/hooks/useCamera'
 import { useAppData } from '@/context/AppDataContext'
 import {
+  displayPlantCommonName,
   identifyPlantWithPlantNet,
   isPlantNetConfigured,
   validatePlantImage,
@@ -148,14 +149,12 @@ export function IdentifyPage() {
         plantId: match.plant?.id ?? top?.scientificName ?? 'unknown',
         plantName:
           match.plant?.arabic_name?.trim() ||
-          top?.commonNames[0] ||
-          top?.scientificName ||
-          'نبات معرَّف',
+          displayPlantCommonName(top, identification.bestMatch),
         scientificName:
           match.plant?.scientific_name ||
           top?.scientificName ||
           identification.bestMatch ||
-          '—',
+          'نبات غير محدد',
         confidence: top?.score ?? 0,
         imagePreview: preview,
       })

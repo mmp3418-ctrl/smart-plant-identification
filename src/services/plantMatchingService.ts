@@ -17,6 +17,10 @@ import type {
   IdentifyImageOptions,
   PlantIdentificationOutcome,
 } from '@/types/plantnet'
+import {
+  extractBinomialScientificName,
+  scientificNameQueryVariants,
+} from '@/lib/scientificName'
 
 const PLANT_COLUMNS =
   'id, arabic_name, scientific_name, taxon_id, family, category, description, image_url, watering, sunlight, temperature_range, care_difficulty, popular, suitable_regions, warnings, created_at' as const
@@ -34,10 +38,6 @@ function requireSupabase() {
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null
   return Array.isArray(value) ? (value[0] ?? null) : value
-}
-
-function normalizeScientificName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ')
 }
 
 /**
@@ -173,47 +173,66 @@ const emptyMatch = (): PlantMatchResult => ({
 })
 
 /**
- * Look up a plant by scientific name (case-insensitive match on scientific_name).
+ * Look up a plant by scientific name with fuzzy binomial cleansing.
+ * Strips authorship (`Mill.`, `L.`, …) before querying so
+ * `Rosa damascena Mill.` matches local `Rosa damascena`.
  */
 export async function matchPlantByScientificName(
   scientificName: string,
 ): Promise<PlantMatchResult> {
   const client = requireSupabase()
-  const name = normalizeScientificName(scientificName)
+  const variants = scientificNameQueryVariants(scientificName)
+  const binomial = extractBinomialScientificName(scientificName)
 
-  if (!name) {
+  if (variants.length === 0) {
     return emptyMatch()
   }
 
-  // 1) Exact (case-insensitive)
-  const exact = await client
-    .from('plants')
-    .select(PLANT_COLUMNS)
-    .ilike('scientific_name', name)
-    .limit(1)
-    .maybeSingle()
+  // 1) Exact ilike for each cleansed variant (binomial first)
+  for (const variant of variants) {
+    const exact = await client
+      .from('plants')
+      .select(PLANT_COLUMNS)
+      .ilike('scientific_name', variant)
+      .limit(1)
+      .maybeSingle()
 
-  if (exact.error) {
-    console.warn('[plantMatching] scientific_name lookup:', exact.error.message)
-    return emptyMatch()
+    if (exact.error) {
+      console.warn(
+        '[plantMatching] scientific_name lookup:',
+        exact.error.message,
+      )
+      continue
+    }
+
+    if (exact.data) {
+      return attachAssociations(exact.data as DbPlantRow, 'scientific_name')
+    }
   }
 
-  if (exact.data) {
-    return attachAssociations(exact.data as DbPlantRow, 'scientific_name')
-  }
-
-  // 2) Prefix match only (e.g. "Olea europaea L." → "Olea europaea") — still real DB rows only
-  const firstTwoWords = name.split(' ').slice(0, 2).join(' ')
-  if (firstTwoWords && firstTwoWords !== name) {
+  // 2) Prefix: binomial% (covers DB rows that still embed authorship)
+  if (binomial) {
     const prefix = await client
       .from('plants')
       .select(PLANT_COLUMNS)
-      .ilike('scientific_name', `${firstTwoWords}%`)
+      .ilike('scientific_name', `${binomial}%`)
       .limit(1)
       .maybeSingle()
 
     if (!prefix.error && prefix.data) {
       return attachAssociations(prefix.data as DbPlantRow, 'scientific_name')
+    }
+
+    // 3) Contains match as last fuzzy step (real rows only — never invents)
+    const contains = await client
+      .from('plants')
+      .select(PLANT_COLUMNS)
+      .ilike('scientific_name', `%${binomial}%`)
+      .limit(1)
+      .maybeSingle()
+
+    if (!contains.error && contains.data) {
+      return attachAssociations(contains.data as DbPlantRow, 'scientific_name')
     }
   }
 
@@ -273,8 +292,9 @@ export async function matchPlantFromIdentification(
     }
   }
 
-  if (input.scientificName.trim()) {
-    return matchPlantByScientificName(input.scientificName)
+  const scientific = input.scientificName?.trim() ?? ''
+  if (scientific) {
+    return matchPlantByScientificName(scientific)
   }
 
   return emptyMatch()

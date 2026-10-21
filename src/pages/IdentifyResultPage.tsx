@@ -11,7 +11,10 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
-import { confidencePercent } from '@/services/plantIdentificationService'
+import {
+  confidencePercent,
+  displayPlantCommonName,
+} from '@/services/plantIdentificationService'
 import type { IdentifySessionResult } from '@/types/identifySession'
 import { cn } from '@/lib/cn'
 
@@ -37,19 +40,20 @@ export function IdentifyResultPage() {
   }
 
   const { previewUrl, bestMatch, candidates, match } = state
-  const top = candidates[0]
-  const plant = match.plant
-  const confidence = top ? confidencePercent(top.score) : 0
+  const top = candidates?.[0]
+  const plant = match?.plant
+  const confidence = top
+    ? (top.confidencePercent ?? confidencePercent(top.score ?? 0))
+    : 0
 
   const displayArabic =
     plant?.arabic_name?.trim() ||
-    top?.commonNames[0] ||
-    'نبات معرَّف'
+    displayPlantCommonName(top, bestMatch)
   const displayScientific =
     plant?.scientific_name?.trim() ||
-    top?.scientificName ||
-    bestMatch ||
-    '—'
+    top?.scientificName?.trim() ||
+    bestMatch?.trim() ||
+    'نبات غير محدد'
 
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
@@ -263,14 +267,16 @@ export function IdentifyResultPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-ink dark:text-stone-100">
-                    {candidate.commonNames[0] || candidate.scientificName}
+                    {displayPlantCommonName(candidate)}
                   </p>
                   <p className="truncate text-xs italic text-muted dark:text-stone-300">
-                    {candidate.scientificName}
+                    {candidate?.scientificName ?? 'نبات غير محدد'}
                   </p>
                 </div>
                 <Badge variant="brand">
-                  {confidencePercent(candidate.score)}%
+                  {candidate.confidencePercent ??
+                    confidencePercent(candidate.score ?? 0)}
+                  %
                 </Badge>
               </li>
             ))}

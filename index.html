@@ -29,6 +29,23 @@
             document.documentElement.style.colorScheme = 'light';
           }
         } catch (e) {}
+
+        /* If opened via a non-hash deep link on GH Pages, prefer hash routing */
+        try {
+          var base = '/smart-plant-identification';
+          var path = location.pathname || '';
+          var hash = location.hash || '';
+          if (
+            path.indexOf(base) === 0 &&
+            path !== base &&
+            path !== base + '/' &&
+            (!hash || hash === '#')
+          ) {
+            var relative = path.slice(base.length) || '/';
+            if (relative.charAt(0) !== '/') relative = '/' + relative;
+            location.replace(base + '/#' + relative + (location.search || ''));
+          }
+        } catch (e2) {}
       })();
     </script>
   </head>

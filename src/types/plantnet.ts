@@ -1,13 +1,13 @@
-/** Pl@ntNet Identify API (v2) response shapes — strictly typed */
+/** Pl@ntNet Identify API (v2) — strict request/response contracts */
 
 export interface PlantNetTaxonName {
-  scientificNameWithoutAuthor: string
+  scientificNameWithoutAuthor?: string
   scientificNameAuthorship?: string
   scientificName?: string
 }
 
 export interface PlantNetSpecies {
-  scientificNameWithoutAuthor: string
+  scientificNameWithoutAuthor?: string
   scientificNameAuthorship?: string
   scientificName?: string
   genus?: PlantNetTaxonName
@@ -20,8 +20,8 @@ export interface PlantNetGbif {
 }
 
 export interface PlantNetResult {
-  score: number
-  species: PlantNetSpecies
+  score?: number
+  species?: PlantNetSpecies
   gbif?: PlantNetGbif | null
 }
 
@@ -30,6 +30,8 @@ export interface PlantNetIdentifyResponse {
   bestMatch?: string
   results?: PlantNetResult[]
   remainingIdentificationRequests?: number
+  message?: string
+  error?: string
 }
 
 export type PlantNetOrgan =
@@ -61,7 +63,10 @@ export interface PlantIdentificationCandidate {
   commonNames: string[]
   family: string | null
   genus: string | null
+  /** Raw Pl@ntNet score in [0, 1] */
   score: number
+  /** Exact confidence percentage 0–100 derived from `score` */
+  confidencePercent: number
   /** GBIF taxon id when provided by Pl@ntNet */
   taxonId: string | null
 }
@@ -89,3 +94,13 @@ export interface PlantIdentificationFailure {
 export type PlantIdentificationOutcome =
   | PlantIdentificationSuccess
   | PlantIdentificationFailure
+
+/** Safe summary of the top match (`results[0]`). */
+export interface PlantIdentificationPrimarySummary {
+  scientificName: string
+  commonNames: string[]
+  commonArabicNames: string[]
+  family: string | null
+  confidencePercent: number
+  score: number
+}

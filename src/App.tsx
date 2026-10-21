@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { AppDataProvider } from '@/context/AppDataContext'
 import { ThemeProvider } from '@/context/ThemeContext'
@@ -17,6 +17,10 @@ import { HistoryPage } from '@/pages/HistoryPage'
 import { AdminPage } from '@/pages/AdminPage'
 import { AboutPage } from '@/pages/AboutPage'
 
+/**
+ * HashRouter keeps all client routes under `/#/...` so GitHub Pages
+ * hard-refreshes never hit a missing nested path on the static host.
+ */
 export default function App() {
   const [showSplash, setShowSplash] = useState(true)
 
@@ -37,15 +41,17 @@ export default function App() {
               <Route element={<RootLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="directory" element={<DirectoryPage />} />
-              <Route path="identify" element={<IdentifyPage />} />
-              <Route path="identify/result" element={<IdentifyResultPage />} />
-              <Route path="plants/:id" element={<PlantDetailPage />} />
+                <Route path="identify" element={<IdentifyPage />} />
+                <Route path="identify/result" element={<IdentifyResultPage />} />
+                <Route path="plants/:id" element={<PlantDetailPage />} />
                 <Route path="favorites" element={<FavoritesPage />} />
                 <Route path="history" element={<HistoryPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="login" element={<LoginPage />} />
                 <Route path="register" element={<RegisterPage />} />
+                {/* Unknown hash routes → home (never blank / crash) */}
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
           </HashRouter>
