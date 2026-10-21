@@ -4,9 +4,9 @@ import {
   ArrowRight,
   Camera,
   Droplets,
-  Leaf,
   MapPin,
   Sun,
+  Thermometer,
   AlertTriangle,
   BookOpen,
 } from 'lucide-react'
@@ -48,12 +48,24 @@ export function IdentifyResultPage() {
 
   const displayArabic =
     plant?.arabic_name?.trim() ||
+    top?.commonNames?.[0]?.trim() ||
     displayPlantCommonName(top, bestMatch)
   const displayScientific =
     plant?.scientific_name?.trim() ||
     top?.scientificName?.trim() ||
     bestMatch?.trim() ||
-    'نبات غير محدد'
+    '—'
+
+  const wateringValue =
+    plant?.watering?.trim() || top?.watering?.trim() || '—'
+  const lightValue =
+    plant?.sunlight?.trim() || top?.light?.trim() || '—'
+  const temperatureValue =
+    plant?.temperature_range?.trim() ||
+    top?.temperature?.trim() ||
+    '—'
+  const descriptionValue =
+    plant?.description?.trim() || top?.description?.trim() || null
 
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
@@ -112,14 +124,13 @@ export function IdentifyResultPage() {
             </p>
           ) : null}
 
-          {plant?.description || top?.description ? (
+          {descriptionValue ? (
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
-              {plant?.description?.trim() || top?.description}
+              {descriptionValue}
             </p>
           ) : (
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
-              تم التعرف على النبات عبر Gemini. لم تُعثر على سجل تفصيلي مطابق في
-              قاعدة البيانات المحلية بعد.
+              تم التعرف على النبات. يمكنك مراجعة إرشادات العناية أدناه.
             </p>
           )}
 
@@ -133,17 +144,17 @@ export function IdentifyResultPage() {
             <MetaTile
               icon={<Droplets className="size-4" />}
               label="الري"
-              value={plant?.watering || '—'}
+              value={wateringValue}
             />
             <MetaTile
               icon={<Sun className="size-4" />}
-              label="الشمس"
-              value={plant?.sunlight || '—'}
+              label="الإضاءة"
+              value={lightValue}
             />
             <MetaTile
-              icon={<Leaf className="size-4" />}
-              label="العناية"
-              value={plant?.care_difficulty || '—'}
+              icon={<Thermometer className="size-4" />}
+              label="الحرارة"
+              value={temperatureValue}
             />
           </div>
 

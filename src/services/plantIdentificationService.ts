@@ -39,17 +39,21 @@ const FALLBACK_COMMON_NAME = 'نبات غير محدد'
 const FALLBACK_SCIENTIFIC_NAME = 'نبات غير محدد'
 const ARABIC_SCRIPT = /[\u0600-\u06FF]/
 
-const GEMINI_IDENTIFY_PROMPT = `You are an expert botanist. Identify the plant or flower in the image.
+const GEMINI_IDENTIFY_PROMPT = `أنت خبير نباتات. حلّل صورة النبات أو الزهرة التالية بدقة.
 
-Return ONLY a valid JSON object (no markdown, no code fences, no extra text) with exactly these keys:
+أعد كائن JSON صالحاً فقط — بدون Markdown وبدون \`\`\`json وبدون أي نص خارج JSON.
+يجب أن يحتوي الكائن على هذه المفاتيح بالضبط وبقيم عربية واضحة (ما عدا الاسم العلمي):
+
 {
-  "common_name": "common name in Arabic if known, otherwise English",
-  "scientific_name": "Latin binomial scientific name (genus species) without author",
-  "description": "short Arabic description of the plant and basic care tips",
-  "health_status": "plant appearance / certainty, preferably include a confidence percent like 85%"
+  "name": "الاسم الشائع بالعربية",
+  "scientificName": "الاسم العلمي اللاتيني (Genus species) بدون المؤلف",
+  "watering": "إرشادات الري بالعربية باختصار",
+  "light": "احتياجات الإضاءة بالعربية باختصار",
+  "temperature": "درجة الحرارة المناسبة بالعربية باختصار",
+  "description": "وصف قصير للنبات وطريقة العناية به بالعربية"
 }
 
-If you cannot identify the plant, still return the same JSON keys with best-effort values and a low confidence in health_status.`
+لا تترك الحقول فارغة. إن لم تكن متأكداً تماماً، أعطِ أفضل تخمين واقعي مع قيم عناية عامة مناسبة.`
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
@@ -141,6 +145,9 @@ export function summarizePrimaryCandidate(
     score,
     description: primary?.description ?? null,
     healthStatus: primary?.healthStatus ?? null,
+    watering: primary?.watering ?? null,
+    light: primary?.light ?? null,
+    temperature: primary?.temperature ?? null,
   }
 }
 
@@ -224,12 +231,19 @@ function parseConfidenceFromHealthStatus(healthStatus: string | null): number {
   return 0.7
 }
 
-/** Strip ```json fences and isolate the first JSON object. */
+/** Strip ``` / ```json fences and isolate the first JSON object. */
 function cleanJsonText(raw: string): string {
   let text = raw.trim()
-  if (text.startsWith('```')) {
+  // Remove BOM / zero-width chars Gemini sometimes emits
+  text = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '')
+
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    text = fenced[1].trim()
+  } else if (text.startsWith('```')) {
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
   }
+
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start !== -1 && end !== -1 && end > start) {
@@ -238,18 +252,58 @@ function cleanJsonText(raw: string): string {
   return text
 }
 
+function firstString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = readOptionalString(record[key])
+    if (value) return value
+  }
+  return null
+}
+
 function parseGeminiPlantJson(rawText: string): GeminiPlantJson | null {
   try {
-    const parsed: unknown = JSON.parse(cleanJsonText(rawText))
+    const cleaned = cleanJsonText(rawText)
+    const parsed: unknown = JSON.parse(cleaned)
     const record = asRecord(parsed)
     if (!record) return null
+
     return {
-      common_name: readOptionalString(record.common_name) ?? undefined,
-      scientific_name: readOptionalString(record.scientific_name) ?? undefined,
-      description: readOptionalString(record.description) ?? undefined,
-      health_status: readOptionalString(record.health_status) ?? undefined,
+      name:
+        firstString(record, ['name', 'common_name', 'commonName', 'arabic_name']) ??
+        undefined,
+      scientificName:
+        firstString(record, [
+          'scientificName',
+          'scientific_name',
+          'latin_name',
+          'latinName',
+        ]) ?? undefined,
+      watering:
+        firstString(record, ['watering', 'water', 'الري']) ?? undefined,
+      light:
+        firstString(record, ['light', 'sunlight', 'lighting', 'الإضاءة']) ??
+        undefined,
+      temperature:
+        firstString(record, [
+          'temperature',
+          'temp',
+          'الحرارة',
+          'care_difficulty',
+        ]) ?? undefined,
+      description:
+        firstString(record, ['description', 'desc', 'الوصف']) ?? undefined,
+      health_status:
+        firstString(record, ['health_status', 'healthStatus', 'confidence']) ??
+        undefined,
     }
-  } catch {
+  } catch (error) {
+    console.warn('[Gemini] JSON parse failed', {
+      error,
+      preview: rawText.slice(0, 400),
+    })
     return null
   }
 }
@@ -258,14 +312,24 @@ function mapGeminiPlantToCandidate(
   plant: GeminiPlantJson,
 ): PlantIdentificationCandidate {
   const commonName =
-    readOptionalString(plant.common_name) || FALLBACK_COMMON_NAME
+    readOptionalString(plant.name) ||
+    readOptionalString(plant.common_name) ||
+    FALLBACK_COMMON_NAME
+
   const rawScientific =
-    readOptionalString(plant.scientific_name) || commonName
+    readOptionalString(plant.scientificName) ||
+    readOptionalString(plant.scientific_name) ||
+    commonName
+
   const scientificName =
     extractBinomialScientificName(rawScientific) || rawScientific
+
   const description = readOptionalString(plant.description)
+  const watering = readOptionalString(plant.watering)
+  const light = readOptionalString(plant.light)
+  const temperature = readOptionalString(plant.temperature)
   const healthStatus = readOptionalString(plant.health_status)
-  const score = parseConfidenceFromHealthStatus(healthStatus)
+  const score = parseConfidenceFromHealthStatus(healthStatus) || 0.82
   const genus = scientificName.includes(' ')
     ? scientificName.split(' ')[0] ?? null
     : null
@@ -281,6 +345,9 @@ function mapGeminiPlantToCandidate(
     taxonId: null,
     description,
     healthStatus,
+    watering,
+    light,
+    temperature,
   }
 }
 
@@ -289,20 +356,34 @@ function outcomeFromGeminiText(text: string): PlantIdentificationOutcome | null 
   if (!trimmed) return null
 
   const plant = parseGeminiPlantJson(trimmed)
-  if (!plant) return null
+  if (!plant) {
+    console.warn('[Gemini] could not map response to plant JSON', {
+      preview: trimmed.slice(0, 500),
+    })
+    return null
+  }
 
   const candidate = mapGeminiPlantToCandidate(plant)
-  const hasName =
-    (candidate.scientificName &&
-      candidate.scientificName !== FALLBACK_SCIENTIFIC_NAME) ||
-    (candidate.commonNames[0] &&
-      candidate.commonNames[0] !== FALLBACK_COMMON_NAME)
+  const displayName = candidate.commonNames[0]?.trim() || ''
+  const scientific = candidate.scientificName?.trim() || ''
 
-  if (!hasName) return null
+  const hasRealName =
+    (displayName.length > 0 && displayName !== FALLBACK_COMMON_NAME) ||
+    (scientific.length > 0 && scientific !== FALLBACK_SCIENTIFIC_NAME)
+
+  // Accept any non-empty care/description payload even if names are weak
+  const hasCarePayload = Boolean(
+    candidate.description ||
+      candidate.watering ||
+      candidate.light ||
+      candidate.temperature,
+  )
+
+  if (!hasRealName && !hasCarePayload) return null
 
   return {
     ok: true,
-    bestMatch: candidate.scientificName,
+    bestMatch: scientific || displayName || FALLBACK_SCIENTIFIC_NAME,
     candidates: [candidate],
     identifiedAt: new Date().toISOString(),
   }
@@ -328,6 +409,9 @@ function buildGracefulFallbackSuccess(): Extract<
     description:
       'تعذّر إكمال التعريف الآن. يُرجى إعادة المحاولة بعد قليل بصورة أوضح وإضاءة جيدة.',
     healthStatus: 'إعادة المحاولة مُستحسنة',
+    watering: null,
+    light: null,
+    temperature: null,
   }
 
   console.warn(
