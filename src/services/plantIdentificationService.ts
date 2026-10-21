@@ -156,8 +156,9 @@ export function summarizePrimaryCandidate(
 // ─── Internal: FormData + URL ────────────────────────────────────────────────
 
 /**
- * Official endpoint shape:
- * `https://my-api.plantnet.org/v2/identify/all?api-key=2b10d9WpUNeMmsuwvO7MLBaUu`
+ * Direct Pl@ntNet URL — auth only via query string:
+ * `https://my-api.plantnet.org/v2/identify/all?api-key=…`
+ * Never put the key in headers (that would force a CORS preflight).
  */
 function buildIdentifyUrl(project: string): string {
   const safeProject = project.trim() || DEFAULT_PROJECT
@@ -167,13 +168,13 @@ function buildIdentifyUrl(project: string): string {
   return url.toString()
 }
 
+/** Multipart body only: `images` (file) + `organs` (selected / auto). */
 function buildIdentifyFormData(file: File, organ: PlantNetOrgan): FormData {
   const formData = new FormData()
   const filename =
     typeof file.name === 'string' && file.name.trim()
       ? file.name.trim()
       : 'plant.jpg'
-  // Pl@ntNet expects multipart fields: images + organs (api-key stays in URL)
   formData.append('images', file, filename)
   formData.append('organs', organ)
   return formData
@@ -479,15 +480,18 @@ export async function identifyPlantWithPlantNet(
       ? options.maxResults
       : DEFAULT_MAX_RESULTS
 
+  // e.g. https://my-api.plantnet.org/v2/identify/all?api-key=2b10d9WpUNeMmsuwvO7MLBaUu
   const url = buildIdentifyUrl(project)
   const formData = buildIdentifyFormData(uploadFile, organ)
 
   let response: Response
   try {
+    // Direct POST — only method + FormData body.
+    // Do NOT set headers, mode, credentials, or Content-Type (browser sets
+    // multipart boundary automatically; custom headers trigger CORS preflight).
     response = await fetch(url, {
       method: 'POST',
       body: formData,
-      // Do not set Content-Type / Authorization — browser sets multipart boundary.
     })
   } catch (error) {
     console.error('[PlantNet] network failure', { url, error })
