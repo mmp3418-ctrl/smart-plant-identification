@@ -9,13 +9,12 @@ import type {
 import { ServiceError } from '@/services/errors'
 import { compressImageForUpload } from '@/services/imageUtils'
 import { extractBinomialScientificName } from '@/lib/scientificName'
-import { readGeminiApiKey } from '@/lib/env'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * `gemini-1.5-flash` was shut down (Sep 2025) and returns
- * "is not found for API version v1beta". Use current Flash models instead.
+ * Gemini Flash models for plant identification via `generateContent` only.
+ * Note: `gemini-1.5-flash` was shut down Sep 2025 and returns 404 on v1beta.
  * @see https://ai.google.dev/gemini-api/docs/models
  */
 const GEMINI_MODELS = [
@@ -24,6 +23,7 @@ const GEMINI_MODELS = [
   'gemini-flash-latest',
 ] as const
 
+/** Exclusive identification endpoint family: Gemini `generateContent` only. */
 const GEMINI_API_BASE =
   'https://generativelanguage.googleapis.com/v1beta/models'
 
@@ -54,8 +54,23 @@ If you cannot identify the plant, still return the same JSON keys with best-effo
 
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Loads the Gemini key exclusively from Vite env (never hardcoded).
+ * Set `VITE_GEMINI_API_KEY` in `.env` or GitHub Actions secrets.
+ */
 function getGeminiApiKey(): string {
-  return readGeminiApiKey().trim()
+  const raw = import.meta.env.VITE_GEMINI_API_KEY
+  if (typeof raw !== 'string') return ''
+  const key = raw.trim()
+  if (
+    !key ||
+    key === 'undefined' ||
+    key === 'null' ||
+    key.toLowerCase().startsWith('your-')
+  ) {
+    return ''
+  }
+  return key
 }
 
 export function isGeminiApiConfigured(): boolean {
@@ -465,8 +480,8 @@ async function messageForHttpError(response: Response): Promise<string> {
 // ─── Public: identify ────────────────────────────────────────────────────────
 
 /**
- * Identify a plant image via Google Gemini Flash (`gemini-2.5-flash`, with fallbacks).
- * Sends base64 `inline_data` + structured JSON prompt; maps result to UI candidates.
+ * Identify a plant image via Google Gemini `generateContent` only.
+ * Image is sent as base64 `inline_data` with `VITE_GEMINI_API_KEY`.
  */
 export async function identifyPlant(
   file: File,
