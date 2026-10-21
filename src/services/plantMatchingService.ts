@@ -1,8 +1,6 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 import { ServiceError } from '@/services/errors'
-import {
-  identifyPlantOrThrow,
-} from '@/services/plantIdentificationService'
+import { identifyPlantOrThrow } from '@/services/plantService'
 import type {
   DbCareGuideRow,
   DbEnvironmentRow,
@@ -278,7 +276,7 @@ export interface MatchFromIdentificationInput {
 }
 
 /**
- * Match Gemini names against local plants (scientific / Arabic / English names).
+ * Match Pl@ntNet names against local plants (scientific / Arabic / English names).
  * Never fabricates plant / soil / environment / care data.
  */
 export async function matchPlantByCommonOrArabicName(
@@ -312,7 +310,7 @@ export async function matchPlantByCommonOrArabicName(
 }
 
 /**
- * Prefer taxon_id, then scientific binomial, then Gemini common-name labels.
+ * Prefer taxon_id, then scientific binomial, then Pl@ntNet common-name labels.
  */
 export async function matchPlantFromIdentification(
   input: MatchFromIdentificationInput,
@@ -357,7 +355,7 @@ export interface IdentifyAndMatchResult {
 }
 
 /**
- * End-to-end: Gemini identify → Supabase environmental match for the top candidate.
+ * End-to-end: Pl@ntNet identify → Supabase environmental match for the top candidate.
  */
 export async function identifyAndMatchPlant(
   file: File,

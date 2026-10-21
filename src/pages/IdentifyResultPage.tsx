@@ -9,12 +9,14 @@ import {
   Thermometer,
   AlertTriangle,
   BookOpen,
+  Sprout,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
 import {
   confidencePercent,
   displayPlantCommonName,
-} from '@/services/plantIdentificationService'
+  PLANTNET_UNRECOGNIZED_MESSAGE,
+} from '@/services/plantService'
 import type { IdentifySessionResult } from '@/types/identifySession'
 import { cn } from '@/lib/cn'
 
@@ -50,10 +52,10 @@ export function IdentifyResultPage() {
     return <Navigate to="/identify" replace />
   }
 
-  const { previewUrl, bestMatch, candidates, match, isPlant, message } = state
+  const { previewUrl, bestMatch, candidates, match, isPlant, message, primary } =
+    state
 
-  // ── Non-plant warning ──────────────────────────────────────────────────────
-  if (!isPlant) {
+  if (!isPlant || !candidates?.[0]) {
     return (
       <div className="container-app py-6 sm:py-8 lg:py-10">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -76,67 +78,72 @@ export function IdentifyResultPage() {
           </Link>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-          <div className="overflow-hidden rounded-2xl glass-panel">
-            <img
-              src={previewUrl}
-              alt="الصورة المُحلَّلة"
-              className="aspect-[4/3] w-full object-cover"
+        <Card glass padding="lg">
+          <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/50 px-4 py-4">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0 text-warning"
+              aria-hidden
             />
+            <div>
+              <h1 className="text-lg font-extrabold text-ink dark:text-stone-100">
+                تعذّر التعرف بدقة
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted dark:text-stone-300">
+                {message?.trim() || PLANTNET_UNRECOGNIZED_MESSAGE}
+              </p>
+            </div>
           </div>
-
-          <Card glass padding="lg">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Badge variant="warning">ليست نباتاً</Badge>
-            </div>
-
-            <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/50 px-4 py-4">
-              <AlertTriangle
-                className="mt-0.5 size-5 shrink-0 text-warning"
-                aria-hidden
-              />
-              <div>
-                <h1 className="text-lg font-extrabold text-ink dark:text-stone-100">
-                  هذه الصورة لا تحتوي على نبات
-                </h1>
-                <p className="mt-2 text-sm leading-relaxed text-muted dark:text-stone-300">
-                  {message?.trim() ||
-                    'الصورة المرفوعة ليست نباتاً. يرجى رفع صورة نبات أو ورقة شجر واضحة.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <Link to="/identify">
-                <Button fullWidth leftIcon={<Camera className="size-4" />}>
-                  رفع صورة نبات أخرى
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        </div>
+          <div className="mt-5">
+            <Link to="/identify">
+              <Button fullWidth leftIcon={<Camera className="size-4" />}>
+                رفع صورة أوضح
+              </Button>
+            </Link>
+          </div>
+        </Card>
       </div>
     )
   }
 
-  // ── Plant result — only Gemini-parsed fields (+ optional DB enrichment) ────
-  const top = candidates?.[0]
+  const top = candidates[0]
   const plant = match?.plant
-  const confidence = top
-    ? (top.confidencePercent ?? confidencePercent(top.score ?? 0))
-    : 0
+  const care = primary?.careInfo ?? top.careInfo
+
+  const confidence =
+    primary?.confidence ??
+    top.confidencePercent ??
+    confidencePercent(top.score ?? 0)
 
   const displayArabic =
-    pickText(top?.name, top?.commonNames?.[0], plant?.arabic_name) ||
-    displayPlantCommonName(top, bestMatch)
+    pickText(
+      primary?.commonName,
+      top.commonName,
+      top.name,
+      top.commonNames?.[0],
+      plant?.arabic_name,
+    ) || displayPlantCommonName(top, bestMatch)
 
   const displayScientific =
-    pickText(top?.scientificName, plant?.scientific_name, bestMatch)
+    pickText(
+      primary?.scientificName,
+      top.scientificName,
+      plant?.scientific_name,
+      bestMatch,
+    ) || null
 
-  const wateringValue = pickText(top?.watering, plant?.watering)
-  const lightValue = pickText(top?.light, plant?.sunlight)
-  const temperatureValue = pickText(top?.temperature, plant?.temperature_range)
-  const descriptionValue = pickText(top?.description, plant?.description)
+  const familyValue =
+    pickText(primary?.family, top.family, plant?.family) || 'غير محدد'
+
+  const wateringValue = pickText(care?.watering, top.watering, plant?.watering)
+  const lightValue = pickText(care?.light, top.light, plant?.sunlight)
+  const temperatureValue = pickText(
+    care?.temperature,
+    top.temperature,
+    plant?.temperature_range,
+  )
+  const soilValue = pickText(care?.soil, top.soil)
+  const descriptionValue = pickText(top.description, plant?.description)
+  const careGuideValue = pickText(top.careGuide)
 
   return (
     <div className="container-app py-6 sm:py-8 lg:py-10">
@@ -157,7 +164,7 @@ export function IdentifyResultPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Badge variant="brand">تم التعريف</Badge>
+        <Badge variant="brand">تم التعريف عبر Pl@ntNet</Badge>
         <Badge variant="sage">{confidence}% ثقة</Badge>
         {match.matchedBy ? (
           <Badge variant="default">
@@ -181,7 +188,7 @@ export function IdentifyResultPage() {
 
         <Card glass padding="lg">
           <p className="text-sm text-muted dark:text-stone-300">
-            {plant?.category || top?.family || 'نتيجة التعريف'}
+            {plant?.category || familyValue}
           </p>
           <h1 className="mt-1 text-2xl font-extrabold text-ink dark:text-stone-100 sm:text-3xl">
             {displayArabic}
@@ -191,6 +198,9 @@ export function IdentifyResultPage() {
               {displayScientific}
             </p>
           ) : null}
+          <p className="mt-1 text-xs text-muted dark:text-stone-400">
+            العائلة: {familyValue}
+          </p>
 
           {descriptionValue ? (
             <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
@@ -198,31 +208,36 @@ export function IdentifyResultPage() {
             </p>
           ) : null}
 
-          {(wateringValue || lightValue || temperatureValue) && (
-            <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
-              {wateringValue ? (
-                <MetaTile
-                  icon={<Droplets className="size-4" />}
-                  label="الري"
-                  value={wateringValue}
-                />
-              ) : null}
-              {lightValue ? (
-                <MetaTile
-                  icon={<Sun className="size-4" />}
-                  label="الإضاءة"
-                  value={lightValue}
-                />
-              ) : null}
-              {temperatureValue ? (
-                <MetaTile
-                  icon={<Thermometer className="size-4" />}
-                  label="الحرارة"
-                  value={temperatureValue}
-                />
-              ) : null}
-            </div>
-          )}
+          <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+            {wateringValue ? (
+              <MetaTile
+                icon={<Droplets className="size-4" />}
+                label="الري"
+                value={wateringValue}
+              />
+            ) : null}
+            {lightValue ? (
+              <MetaTile
+                icon={<Sun className="size-4" />}
+                label="الإضاءة"
+                value={lightValue}
+              />
+            ) : null}
+            {temperatureValue ? (
+              <MetaTile
+                icon={<Thermometer className="size-4" />}
+                label="درجة الحرارة"
+                value={temperatureValue}
+              />
+            ) : null}
+            {soilValue ? (
+              <MetaTile
+                icon={<Sprout className="size-4" />}
+                label="التربة"
+                value={soilValue}
+              />
+            ) : null}
+          </div>
 
           {plant ? (
             <div className="mt-5">
@@ -275,23 +290,36 @@ export function IdentifyResultPage() {
         </div>
       )}
 
-      {match.careGuides.length > 0 ? (
+      {match.careGuides.length > 0 || careGuideValue ? (
         <Card className="mt-4" glass padding="lg">
-          <CardHeader title="دليل العناية" description="من قاعدة البيانات المحلية" />
+          <CardHeader
+            title="دليل العناية"
+            description={
+              match.careGuides.length > 0
+                ? 'من قاعدة البيانات المحلية'
+                : 'مستخلص حسب نوع النبات من نتيجة Pl@ntNet'
+            }
+          />
           <CardContent>
-            <ol className="space-y-2.5">
-              {match.careGuides.map((step, index) => (
-                <li
-                  key={step.id}
-                  className="flex gap-3 text-sm leading-relaxed text-muted dark:text-stone-300"
-                >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand dark:text-emerald-300">
-                    {step.step_order ?? index + 1}
-                  </span>
-                  <span>{step.instruction_ar}</span>
-                </li>
-              ))}
-            </ol>
+            {match.careGuides.length > 0 ? (
+              <ol className="space-y-2.5">
+                {match.careGuides.map((step, index) => (
+                  <li
+                    key={step.id}
+                    className="flex gap-3 text-sm leading-relaxed text-muted dark:text-stone-300"
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand dark:text-emerald-300">
+                      {step.step_order ?? index + 1}
+                    </span>
+                    <span>{step.instruction_ar}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted dark:text-stone-300">
+                {careGuideValue}
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : null}

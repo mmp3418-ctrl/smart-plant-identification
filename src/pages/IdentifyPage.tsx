@@ -16,9 +16,10 @@ import { useAppData } from '@/context/AppDataContext'
 import {
   displayPlantCommonName,
   identifyPlant,
-  isGeminiApiConfigured,
+  isPlantNetApiConfigured,
+  PLANTNET_UNRECOGNIZED_MESSAGE,
   validatePlantImage,
-} from '@/services/plantIdentificationService'
+} from '@/services/plantService'
 import { matchPlantFromIdentification } from '@/services/plantMatchingService'
 import { dataUrlToFile, fileToDataUrl } from '@/services/imageUtils'
 import { isServiceError } from '@/services/errors'
@@ -79,10 +80,10 @@ export function IdentifyPage() {
   async function analyze() {
     if (!preview) return
 
-    if (!isGeminiApiConfigured()) {
+    if (!isPlantNetApiConfigured()) {
       setPhase('error')
       setErrorMessage(
-        'تعذّر تهيئة مفتاح Gemini. أعد تحميل الصفحة أو تحقق من إعدادات المشروع.',
+        'تعذّر تهيئة مفتاح Pl@ntNet. أضف VITE_PLANTNET_API_KEY إلى ملف .env ثم أعد التشغيل.',
       )
       return
     }
@@ -97,12 +98,15 @@ export function IdentifyPage() {
 
       const identification = await identifyPlant(file, {
         maxResults: 5,
+        organ: 'auto',
       })
 
       if (!identification.ok) {
         console.error('Plant Identification Error:', identification)
         setPhase('error')
-        setErrorMessage(identification.message)
+        setErrorMessage(
+          identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+        )
         return
       }
 
@@ -114,31 +118,15 @@ export function IdentifyPage() {
         matchedBy: null,
       }
 
-      // Non-plant image — show friendly warning on the result page
-      if (!identification.isPlant) {
-        stop()
-        navigate('/identify/result', {
-          state: {
-            previewUrl: preview,
-            isPlant: false,
-            message:
-              identification.message ||
-              'هذه الصورة لا تحتوي على نبات',
-            bestMatch: null,
-            candidates: [],
-            identifiedAt: identification.identifiedAt,
-            match: emptyMatch,
-          } satisfies IdentifySessionResult,
-        })
+      if (!identification.isPlant || !identification.candidates[0]) {
+        setPhase('error')
+        setErrorMessage(
+          identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+        )
         return
       }
 
       const top = identification.candidates[0]
-      if (!top) {
-        setPhase('error')
-        setErrorMessage('لم تُرجع الخدمة بيانات نبات صالحة. أعد المحاولة.')
-        return
-      }
 
       let match
       try {
@@ -158,6 +146,7 @@ export function IdentifyPage() {
         isPlant: true,
         message: null,
         bestMatch: identification.bestMatch,
+        primary: identification.primary,
         candidates: identification.candidates,
         identifiedAt: identification.identifiedAt,
         match,
@@ -168,6 +157,7 @@ export function IdentifyPage() {
           plantId: match.plant?.id ?? top.scientificName ?? 'unknown',
           plantName:
             match.plant?.arabic_name?.trim() ||
+            top.commonName?.trim() ||
             top.name?.trim() ||
             displayPlantCommonName(top, identification.bestMatch),
           scientificName:
@@ -191,7 +181,7 @@ export function IdentifyPage() {
       setErrorMessage(
         isServiceError(error)
           ? error.message
-          : 'تعذّر تحليل الصورة. حاول مرة أخرى بصورة أوضح.',
+          : PLANTNET_UNRECOGNIZED_MESSAGE,
       )
     }
   }
@@ -252,7 +242,7 @@ export function IdentifyPage() {
     <div className="relative flex min-h-dvh flex-col bg-[#142D21] text-stone-100">
       {phase === 'analyzing' ? (
         <GreenLoadingOverlay
-          message="جارٍ تعريف النبات عبر Gemini…"
+          message="جارٍ تعريف النبات عبر Pl@ntNet…"
           zIndexClass="z-[95]"
         />
       ) : null}
@@ -377,7 +367,7 @@ export function IdentifyPage() {
           {phase === 'preview' && preview ? (
             <>
               <p className="text-center text-xs text-emerald-100/70">
-                راجع المعاينة ثم اضغط «تحليل الصورة» لإرسالها إلى Gemini
+                راجع المعاينة ثم اضغط «تحليل الصورة» لإرسالها إلى Pl@ntNet
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <Button

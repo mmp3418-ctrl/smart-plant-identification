@@ -1,11 +1,38 @@
-/** Plant identification contracts (Google Gemini 1.5 Flash) */
+/** Plant identification contracts (Pl@ntNet API v2) */
 
 export interface IdentifyImageOptions {
+  /** Max suggestions to keep after ranking (default 5). */
   maxResults?: number
+  /** Organ hint sent to Pl@ntNet (`auto` by default). */
+  organ?: 'auto' | 'leaf' | 'flower' | 'fruit' | 'bark'
+}
+
+/** Structured Arabic care guidelines derived for the identified species. */
+export interface PlantCareInfo {
+  watering: string
+  light: string
+  temperature: string
+  soil: string
+}
+
+/**
+ * Application-wide normalized top match from Pl@ntNet.
+ * This is the canonical shape consumed by UI / matching layers.
+ */
+export interface NormalizedPlantMatch {
+  commonName: string
+  scientificName: string
+  /** Confidence percentage 0–100 */
+  confidence: number
+  family: string
+  careInfo: PlantCareInfo
 }
 
 export interface PlantIdentificationCandidate {
+  /** Display / common name (Arabic preferred when available). */
   name: string
+  /** Alias of `name` for NormalizedPlantMatch consumers */
+  commonName: string
   scientificName: string
   scientificNameAuthorship: string | null
   commonNames: string[]
@@ -23,16 +50,18 @@ export interface PlantIdentificationCandidate {
   soil: string | null
   environment: string | null
   careGuide: string | null
+  careInfo: PlantCareInfo
   healthStatus: string | null
+  detailUrl: string | null
 }
 
 export interface PlantIdentificationSuccess {
   ok: true
-  /** Whether Gemini detected a plant / flower / tree / leaf in the image */
   isPlant: boolean
-  /** Arabic message when `isPlant` is false */
   message: string | null
   bestMatch: string | null
+  /** Top normalized match when identification succeeds */
+  primary: NormalizedPlantMatch | null
   candidates: PlantIdentificationCandidate[]
   identifiedAt: string
 }
@@ -47,6 +76,7 @@ export interface PlantIdentificationFailure {
     | 'NETWORK'
     | 'API_ERROR'
     | 'NO_RESULTS'
+    | 'LOW_CONFIDENCE'
     | 'UNKNOWN'
 }
 
@@ -66,25 +96,39 @@ export interface PlantIdentificationPrimarySummary {
   watering: string | null
   light: string | null
   temperature: string | null
+  soil: string | null
   isPlant: boolean
   message: string | null
 }
 
-/** Raw JSON shapes Gemini may return */
-export interface GeminiPlantPositiveJson {
-  isPlant: true
-  name?: string
+// ─── Pl@ntNet raw API shapes ─────────────────────────────────────────────────
+
+export interface PlantNetNamedTaxon {
+  scientificNameWithoutAuthor?: string
+  scientificNameAuthorship?: string
   scientificName?: string
-  confidence?: number
-  watering?: string
-  light?: string
-  temperature?: string
-  description?: string
 }
 
-export interface GeminiPlantNegativeJson {
-  isPlant: false
-  message?: string
+export interface PlantNetSpecies {
+  scientificNameWithoutAuthor?: string
+  scientificNameAuthorship?: string
+  scientificName?: string
+  commonNames?: string[]
+  family?: PlantNetNamedTaxon
+  genus?: PlantNetNamedTaxon
 }
 
-export type GeminiPlantJson = GeminiPlantPositiveJson | GeminiPlantNegativeJson
+export interface PlantNetResult {
+  score?: number
+  species?: PlantNetSpecies
+}
+
+export interface PlantNetIdentifyResponse {
+  query?: unknown
+  language?: string
+  preferedReferential?: string
+  bestMatch?: string
+  results?: PlantNetResult[]
+  remainingIdentificationRequests?: number
+  version?: string
+}

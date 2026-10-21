@@ -1,5 +1,5 @@
 /**
- * Client-side image helpers: preview conversion + Canvas compression for Gemini.
+ * Client-side image helpers: preview conversion + Canvas compression for Pl@ntNet.
  */
 
 export interface CompressImageOptions {
@@ -106,7 +106,7 @@ function replaceExtension(filename: string, ext: string): string {
 }
 
 /**
- * Compress / downscale an image with HTML5 Canvas before Gemini upload.
+ * Compress / downscale an image with HTML5 Canvas before Pl@ntNet upload.
  * Heavy phone photos (8–15 MB) are scaled and JPEG-encoded to under `maxBytes`.
  * Returns the original file when it is already small enough and within dimensions.
  */

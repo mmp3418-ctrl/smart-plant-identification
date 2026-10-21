@@ -23,8 +23,8 @@ function isPlaceholder(value: string): boolean {
   return (
     lower.includes('your-project') ||
     lower.includes('your-anon-key') ||
-    lower.includes('your-gemini') ||
-    lower === 'your-gemini-api-key' ||
+    lower.includes('your-plantnet') ||
+    lower.includes('your-plant-id') ||
     lower.startsWith('your-')
   )
 }
@@ -35,9 +35,9 @@ function readEnv(value: unknown): string {
   return normalized
 }
 
-/** Google Gemini API key from `VITE_GEMINI_API_KEY`. */
-export function readGeminiApiKey(): string {
-  return readEnv(import.meta.env.VITE_GEMINI_API_KEY)
+/** Pl@ntNet API key from `VITE_PLANTNET_API_KEY`. */
+export function readPlantNetApiKey(): string {
+  return readEnv(import.meta.env.VITE_PLANTNET_API_KEY)
 }
 
 export function readSupabaseUrl(): string {
