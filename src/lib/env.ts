@@ -35,9 +35,15 @@ function readEnv(value: unknown): string {
   return normalized
 }
 
-/** Pl@ntNet API key from `VITE_PLANTNET_API_KEY`. */
+/**
+ * Pl@ntNet API key from `VITE_PLANTNET_API_KEY`, with a production fallback
+ * when the Vite env var was not injected at build time.
+ */
 export function readPlantNetApiKey(): string {
-  return readEnv(import.meta.env.VITE_PLANTNET_API_KEY)
+  return (
+    readEnv(import.meta.env.VITE_PLANTNET_API_KEY) ||
+    '2b10dRfDh71QvSzCP4smdtYoZe'
+  )
 }
 
 export function readSupabaseUrl(): string {

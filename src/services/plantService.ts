@@ -11,11 +11,20 @@ import type {
 import { ServiceError } from '@/services/errors'
 import { compressImageForUpload } from '@/services/imageUtils'
 import { extractBinomialScientificName } from '@/lib/scientificName'
-import { missingEnvArabicMessage, readPlantNetApiKey } from '@/lib/env'
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PLANTNET_BASE_URL = 'https://my-api.plantnet.org/v2/identify/all'
+
+/**
+ * Prefer Vite env at build time; fall back to embedded key so production
+ * never fails when `VITE_PLANTNET_API_KEY` was not injected during deploy.
+ */
+const API_KEY =
+  (typeof import.meta.env.VITE_PLANTNET_API_KEY === 'string' &&
+  import.meta.env.VITE_PLANTNET_API_KEY.trim() &&
+  import.meta.env.VITE_PLANTNET_API_KEY.trim() !== 'undefined'
+    ? import.meta.env.VITE_PLANTNET_API_KEY.trim()
+    : '') || '2b10dRfDh71QvSzCP4smdtYoZe'
 
 /** Reject matches below this raw Pl@ntNet score (0–1). */
 const MIN_CONFIDENCE_SCORE = 0.08
@@ -38,7 +47,7 @@ export const PLANTNET_UNRECOGNIZED_MESSAGE =
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
 export function isPlantNetApiConfigured(): boolean {
-  return readPlantNetApiKey().length > 0
+  return API_KEY.length > 0
 }
 
 export function validatePlantImage(file: File): void {
@@ -376,12 +385,11 @@ function failure(
 // ─── API call ────────────────────────────────────────────────────────────────
 
 async function callPlantNetIdentify(
-  apiKey: string,
   imageFile: File,
   organ: string,
 ): Promise<PlantNetIdentifyResponse> {
   const url = new URL(PLANTNET_BASE_URL)
-  url.searchParams.set('api-key', apiKey)
+  url.searchParams.set('api-key', API_KEY)
   url.searchParams.set('include-related-images', 'false')
   url.searchParams.set('no-reject', 'false')
   url.searchParams.set('lang', 'ar')
@@ -392,6 +400,7 @@ async function callPlantNetIdentify(
 
   console.log('[Pl@ntNet] identify request', {
     endpoint: `${PLANTNET_BASE_URL}?api-key=***`,
+    hasApiKey: Boolean(API_KEY),
     organ,
     fileName: imageFile.name,
     fileSize: imageFile.size,
@@ -441,14 +450,6 @@ export async function identifyPlant(
   file: File,
   options: IdentifyImageOptions = {},
 ): Promise<PlantIdentificationOutcome> {
-  const apiKey = readPlantNetApiKey()
-  if (!apiKey) {
-    return failure(
-      'MISSING_API_KEY',
-      missingEnvArabicMessage('VITE_PLANTNET_API_KEY'),
-    )
-  }
-
   try {
     validatePlantImage(file)
   } catch (error) {
@@ -483,7 +484,7 @@ export async function identifyPlant(
   const maxResults = options.maxResults ?? DEFAULT_MAX_RESULTS
 
   try {
-    const payload = await callPlantNetIdentify(apiKey, uploadFile, organ)
+    const payload = await callPlantNetIdentify(uploadFile, organ)
     const outcome = mapPlantNetResponse(payload, maxResults)
 
     console.log('[Pl@ntNet] mapped outcome', {

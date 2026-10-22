@@ -16,7 +16,6 @@ import { useAppData } from '@/context/AppDataContext'
 import {
   displayPlantCommonName,
   identifyPlant,
-  isPlantNetApiConfigured,
   PLANTNET_UNRECOGNIZED_MESSAGE,
   validatePlantImage,
 } from '@/services/plantService'
@@ -79,14 +78,6 @@ export function IdentifyPage() {
 
   async function analyze() {
     if (!preview) return
-
-    if (!isPlantNetApiConfigured()) {
-      setPhase('error')
-      setErrorMessage(
-        'تعذّر تهيئة مفتاح Pl@ntNet. أضف VITE_PLANTNET_API_KEY إلى ملف .env ثم أعد التشغيل.',
-      )
-      return
-    }
 
     setPhase('analyzing')
     setErrorMessage(null)
