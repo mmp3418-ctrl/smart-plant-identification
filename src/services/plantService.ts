@@ -476,24 +476,36 @@ function extractApiErrorMessage(
 
 // ─── API call ────────────────────────────────────────────────────────────────
 
+/**
+ * Build the real Pl@ntNet identify URL, then wrap it with corsproxy.io so the
+ * browser is not blocked by Pl@ntNet's CORS policy (HTTP 403 Origin not allowed).
+ */
+function buildProxiedPlantNetUrl(): { targetUrl: string; proxyUrl: string } {
+  const target = new URL(PLANTNET_BASE_URL)
+  target.searchParams.set('api-key', API_KEY)
+  target.searchParams.set('include-related-images', 'false')
+  target.searchParams.set('no-reject', 'true')
+  target.searchParams.set('lang', 'en')
+
+  const targetUrl = target.toString()
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  return { targetUrl, proxyUrl }
+}
+
 async function callPlantNetIdentify(
   imageFile: File,
   organ: string,
 ): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
-  // Exact identify URL with API key (also keeps optional query flags)
-  const url = new URL(PLANTNET_BASE_URL)
-  url.searchParams.set('api-key', API_KEY)
-  url.searchParams.set('include-related-images', 'false')
-  url.searchParams.set('no-reject', 'true')
-  url.searchParams.set('lang', 'en')
+  const { targetUrl, proxyUrl } = buildProxiedPlantNetUrl()
 
   const form = new FormData()
   // Browser sets multipart/form-data + boundary — do NOT set Content-Type manually
   form.append('images', imageFile, imageFile.name || 'plant.jpg')
   form.append('organs', organ)
 
-  console.log('[Pl@ntNet] identify request', {
-    url: `https://my-api.plantnet.org/v2/identify/all?api-key=${API_KEY.slice(0, 6)}…`,
+  console.log('[Pl@ntNet] identify via CORS proxy', {
+    targetUrl: targetUrl.replace(API_KEY, `${API_KEY.slice(0, 6)}…`),
+    proxyHost: 'corsproxy.io',
     organ,
     fileName: imageFile.name,
     fileSize: imageFile.size,
@@ -502,24 +514,35 @@ async function callPlantNetIdentify(
 
   let response: Response
   try {
-    response = await fetch(url.toString(), {
+    response = await fetch(proxyUrl, {
       method: 'POST',
       body: form,
-      // Intentionally no headers: FormData must use browser multipart boundary
+      // Intentionally no headers — required for correct multipart boundaries
     })
   } catch (error) {
-    console.error('Network Error (Pl@ntNet fetch failed):', error)
-    throw new ServiceError(formatVisibleError(error), 'NETWORK')
+    console.error('Network/Proxy Error (Pl@ntNet via corsproxy):', error)
+    throw new ServiceError(
+      `Proxy/Network Error: ${formatVisibleError(error)}`,
+      'NETWORK',
+    )
   }
 
   const bodyText = await response.text()
-  console.log('[Pl@ntNet] HTTP status:', response.status, response.statusText)
+  console.log(
+    '[Pl@ntNet] proxy HTTP status:',
+    response.status,
+    response.statusText,
+  )
 
   let data: unknown = null
   try {
     data = bodyText ? JSON.parse(bodyText) : null
   } catch (error) {
-    console.error('JSON Parse Error (Pl@ntNet body):', error, bodyText.slice(0, 400))
+    console.error(
+      'JSON Parse Error (proxy/PlantNet body):',
+      error,
+      bodyText.slice(0, 400),
+    )
     throw new ServiceError(
       `JSON Parse Error: ${formatVisibleError(error)}. Body: ${bodyText.slice(0, 180)}`,
       'API_ERROR',
@@ -531,7 +554,6 @@ async function callPlantNetIdentify(
   const results = extractResultsList(data)
 
   if (!response.ok) {
-    // Prefer surfacing API error text; still accept body if it already has results
     if (results.length === 0) {
       const detail = extractApiErrorMessage(
         response.status,
@@ -539,8 +561,13 @@ async function callPlantNetIdentify(
         bodyText,
         data,
       )
-      console.error('Plant Identification Error:', detail)
-      throw new ServiceError(detail, 'API_ERROR')
+      console.error('Plant Identification Error (via proxy):', detail)
+      throw new ServiceError(
+        detail.includes('CORS') || response.status === 403
+          ? `Proxy/CORS Error: ${detail}`
+          : detail,
+        'API_ERROR',
+      )
     }
     console.warn(
       '[Pl@ntNet] non-OK status but results present — using results',
