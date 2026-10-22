@@ -354,46 +354,74 @@ function toNormalizedMatch(
   }
 }
 
+/** Normalize Pl@ntNet payload: prefer `data.results`, else treat array body as results. */
+function extractResultsList(data: unknown): PlantNetResult[] {
+  if (Array.isArray(data)) {
+    return data as PlantNetResult[]
+  }
+  if (data && typeof data === 'object') {
+    const record = data as PlantNetIdentifyResponse & Record<string, unknown>
+    if (Array.isArray(record.results)) {
+      return record.results
+    }
+  }
+  return []
+}
+
+function formatVisibleError(error: unknown, fallbackStatus?: string): string {
+  if (error instanceof ServiceError) {
+    return error.message
+  }
+  if (error instanceof Error) {
+    const msg = error.message?.trim() || error.name || 'Unknown Error'
+    // Mobile browsers often report CORS / offline as opaque "Failed to fetch"
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
+      return `Network/CORS Error: ${msg}. قد يحظر المتصفح طلب Pl@ntNet من هذا الموقع (CORS).`
+    }
+    return msg
+  }
+  if (typeof error === 'string' && error.trim()) return error.trim()
+  if (fallbackStatus) return fallbackStatus
+  return PLANTNET_UNRECOGNIZED_MESSAGE
+}
+
 function mapPlantNetResponse(
-  payload: PlantNetIdentifyResponse,
+  payload: unknown,
   maxResults: number,
 ): Extract<PlantIdentificationOutcome, { ok: true }> | Extract<
   PlantIdentificationOutcome,
   { ok: false }
 > {
-  const results = Array.isArray(payload.results) ? payload.results : []
+  // const results = data.results || data (when data is already an array)
+  const results = extractResultsList(payload)
 
   console.log('[Pl@ntNet] results length:', results.length)
 
   if (results.length === 0) {
-    console.warn('[Pl@ntNet] empty results[] — showing unrecognized message')
+    console.warn('[Pl@ntNet] empty results — visible error for mobile debug')
     return {
       ok: false,
       code: 'NO_RESULTS',
-      message: PLANTNET_UNRECOGNIZED_MESSAGE,
+      message:
+        'Pl@ntNet: لا توجد نتائج في الاستجابة (results فارغ). جرّب صورة أوضح لأوراق أو أزهار.',
     }
   }
 
-  // No score filtering — immediately take results[0], then map remaining rows
+  // Immediately take results[0] — no score filtering
   const first = mapResultToCandidate(results[0]!)
   if (!first) {
     console.warn('[Pl@ntNet] results[0] mapping failed', results[0])
+    const species = results[0]?.species
     return {
       ok: false,
       code: 'NO_RESULTS',
-      message: PLANTNET_UNRECOGNIZED_MESSAGE,
+      message: `تعذّر قراءة النتيجة الأولى. species=${JSON.stringify(species ?? null).slice(0, 220)}`,
     }
   }
 
   const rest = results
     .slice(1)
-    .map((result, index) => {
-      const mapped = mapResultToCandidate(result)
-      if (!mapped) {
-        console.warn('[Pl@ntNet] could not map result index', index + 1, result)
-      }
-      return mapped
-    })
+    .map((result) => mapResultToCandidate(result))
     .filter((c): c is PlantIdentificationCandidate => Boolean(c))
 
   const candidates = [first, ...rest].slice(0, Math.max(1, maxResults))
@@ -424,26 +452,48 @@ function failure(
   return { ok: false, code, message }
 }
 
+function extractApiErrorMessage(
+  status: number,
+  statusText: string,
+  bodyText: string,
+  parsed: unknown,
+): string {
+  if (parsed && typeof parsed === 'object') {
+    const record = parsed as Record<string, unknown>
+    for (const key of ['message', 'error', 'detail', 'title']) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim()) {
+        return `HTTP ${status} ${statusText || ''}: ${value.trim()}`.trim()
+      }
+    }
+  }
+  const snippet = bodyText.trim().slice(0, 280)
+  if (snippet) {
+    return `HTTP ${status} ${statusText || ''}: ${snippet}`.trim()
+  }
+  return `HTTP ${status} ${statusText || 'Error'}`.trim()
+}
+
 // ─── API call ────────────────────────────────────────────────────────────────
 
 async function callPlantNetIdentify(
   imageFile: File,
   organ: string,
-): Promise<PlantNetIdentifyResponse> {
+): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
+  // Exact identify URL with API key (also keeps optional query flags)
   const url = new URL(PLANTNET_BASE_URL)
   url.searchParams.set('api-key', API_KEY)
   url.searchParams.set('include-related-images', 'false')
-  // Return suggestions even when confidence is low (avoids empty/404 rejections)
   url.searchParams.set('no-reject', 'true')
   url.searchParams.set('lang', 'en')
 
   const form = new FormData()
+  // Browser sets multipart/form-data + boundary — do NOT set Content-Type manually
   form.append('images', imageFile, imageFile.name || 'plant.jpg')
   form.append('organs', organ)
 
   console.log('[Pl@ntNet] identify request', {
-    endpoint: `${PLANTNET_BASE_URL}?api-key=***`,
-    hasApiKey: Boolean(API_KEY),
+    url: `https://my-api.plantnet.org/v2/identify/all?api-key=${API_KEY.slice(0, 6)}…`,
     organ,
     fileName: imageFile.name,
     fileSize: imageFile.size,
@@ -455,51 +505,61 @@ async function callPlantNetIdentify(
     response = await fetch(url.toString(), {
       method: 'POST',
       body: form,
+      // Intentionally no headers: FormData must use browser multipart boundary
     })
   } catch (error) {
     console.error('Network Error (Pl@ntNet fetch failed):', error)
-    throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'NETWORK')
+    throw new ServiceError(formatVisibleError(error), 'NETWORK')
   }
 
   const bodyText = await response.text()
-  console.log('[Pl@ntNet] HTTP status:', response.status)
+  console.log('[Pl@ntNet] HTTP status:', response.status, response.statusText)
 
-  let data: PlantNetIdentifyResponse | null = null
+  let data: unknown = null
   try {
-    data = JSON.parse(bodyText) as PlantNetIdentifyResponse
+    data = bodyText ? JSON.parse(bodyText) : null
   } catch (error) {
     console.error('JSON Parse Error (Pl@ntNet body):', error, bodyText.slice(0, 400))
-    throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
+    throw new ServiceError(
+      `JSON Parse Error: ${formatVisibleError(error)}. Body: ${bodyText.slice(0, 180)}`,
+      'API_ERROR',
+    )
   }
 
   console.log('API Raw Response:', data)
 
-  // If the body already contains results, use them even on non-2xx (e.g. soft 404)
-  const hasResults =
-    Array.isArray(data.results) && data.results.length > 0
+  const results = extractResultsList(data)
 
-  if (!response.ok && !hasResults) {
-    console.error('Plant Identification Error:', {
-      status: response.status,
-      body: bodyText.slice(0, 400),
-    })
-    throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
-  }
-
-  if (!response.ok && hasResults) {
+  if (!response.ok) {
+    // Prefer surfacing API error text; still accept body if it already has results
+    if (results.length === 0) {
+      const detail = extractApiErrorMessage(
+        response.status,
+        response.statusText,
+        bodyText,
+        data,
+      )
+      console.error('Plant Identification Error:', detail)
+      throw new ServiceError(detail, 'API_ERROR')
+    }
     console.warn(
-      '[Pl@ntNet] non-OK status but results[] present — using results anyway',
+      '[Pl@ntNet] non-OK status but results present — using results',
       response.status,
     )
   }
 
-  return data
+  if (Array.isArray(data)) {
+    return data as PlantNetResult[]
+  }
+
+  return (data ?? { results }) as PlantNetIdentifyResponse
 }
 
 // ─── Public identify ─────────────────────────────────────────────────────────
 
 /**
  * Core platform engine: identify a plant image exclusively via Pl@ntNet v2.
+ * Failures return the exact error string so mobile UI can show the real cause.
  */
 export async function identifyPlant(
   file: File,
@@ -515,7 +575,7 @@ export async function identifyPlant(
         error.message,
       )
     }
-    return failure('INVALID_FILE')
+    return failure('INVALID_FILE', formatVisibleError(error))
   }
 
   let uploadFile: File
@@ -528,11 +588,17 @@ export async function identifyPlant(
     })
   } catch (error) {
     console.error('Plant Identification Error:', error)
-    return failure('INVALID_FILE')
+    return failure(
+      'INVALID_FILE',
+      `ضغط الصورة فشل: ${formatVisibleError(error)}`,
+    )
   }
 
   if (uploadFile.size > MAX_UPLOAD_BYTES) {
-    return failure('FILE_TOO_LARGE')
+    return failure(
+      'FILE_TOO_LARGE',
+      `الملف كبير بعد الضغط (${uploadFile.size} بايت).`,
+    )
   }
 
   const organ = options.organ ?? 'auto'
@@ -550,15 +616,16 @@ export async function identifyPlant(
     return outcome
   } catch (error) {
     console.error('Plant Identification Error:', error)
+    const message = formatVisibleError(error)
     if (error instanceof ServiceError) {
       return failure(
         error.code === 'NETWORK' || error.code === 'API_ERROR'
           ? error.code
           : 'API_ERROR',
-        error.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+        message,
       )
     }
-    return failure('API_ERROR')
+    return failure('API_ERROR', message)
   }
 }
 

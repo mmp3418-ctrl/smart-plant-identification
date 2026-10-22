@@ -95,8 +95,14 @@ export function IdentifyPage() {
       if (!identification.ok) {
         console.error('Plant Identification Error:', identification)
         setPhase('error')
+        // Show exact service / network / HTTP message on mobile (no generic-only text)
         setErrorMessage(
-          identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+          [
+            identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+            identification.code ? `(رمز: ${identification.code})` : null,
+          ]
+            .filter(Boolean)
+            .join(' '),
         )
         return
       }
@@ -112,7 +118,8 @@ export function IdentifyPage() {
       if (!identification.isPlant || !identification.candidates[0]) {
         setPhase('error')
         setErrorMessage(
-          identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
+          identification.message ||
+            'الاستجابة نجحت لكن بدون مرشح نبات قابل للعرض.',
         )
         return
       }
@@ -169,11 +176,12 @@ export function IdentifyPage() {
     } catch (error) {
       console.error('Plant Identification Error:', error)
       setPhase('error')
-      setErrorMessage(
-        isServiceError(error)
+      const detail = isServiceError(error)
+        ? error.message
+        : error instanceof Error
           ? error.message
-          : PLANTNET_UNRECOGNIZED_MESSAGE,
-      )
+          : String(error ?? PLANTNET_UNRECOGNIZED_MESSAGE)
+      setErrorMessage(detail || PLANTNET_UNRECOGNIZED_MESSAGE)
     }
   }
 
@@ -349,7 +357,12 @@ export function IdentifyPage() {
             className="mt-4 flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-950/40 px-3 py-3 text-sm text-red-100"
           >
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <p>{errorMessage}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold">تفاصيل الخطأ (للتشخيص)</p>
+              <p className="break-words whitespace-pre-wrap leading-relaxed opacity-95">
+                {errorMessage}
+              </p>
+            </div>
           </div>
         ) : null}
 
