@@ -95,14 +95,8 @@ export function IdentifyPage() {
       if (!identification.ok) {
         console.error('Plant Identification Error:', identification)
         setPhase('error')
-        // Show exact service / network / HTTP message on mobile (no generic-only text)
         setErrorMessage(
-          [
-            identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
-            identification.code ? `(رمز: ${identification.code})` : null,
-          ]
-            .filter(Boolean)
-            .join(' '),
+          identification.message || PLANTNET_UNRECOGNIZED_MESSAGE,
         )
         return
       }
@@ -357,12 +351,9 @@ export function IdentifyPage() {
             className="mt-4 flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-950/40 px-3 py-3 text-sm text-red-100"
           >
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <div className="min-w-0 space-y-1">
-              <p className="font-semibold">تفاصيل الخطأ (للتشخيص)</p>
-              <p className="break-words whitespace-pre-wrap leading-relaxed opacity-95">
-                {errorMessage}
-              </p>
-            </div>
+            <p className="min-w-0 break-words whitespace-pre-wrap leading-relaxed">
+              {errorMessage}
+            </p>
           </div>
         ) : null}
 
