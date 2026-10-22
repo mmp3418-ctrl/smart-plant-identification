@@ -476,40 +476,57 @@ function extractApiErrorMessage(
 
 // ─── API call ────────────────────────────────────────────────────────────────
 
-/**
- * Build the real Pl@ntNet identify URL, then wrap it with corsproxy.io so the
- * browser is not blocked by Pl@ntNet's CORS policy (HTTP 403 Origin not allowed).
- */
-function buildProxiedPlantNetUrl(): { targetUrl: string; proxyUrl: string } {
+/** Real Pl@ntNet identify URL (with API key + flags). */
+function buildPlantNetTargetUrl(): string {
   const target = new URL(PLANTNET_BASE_URL)
   target.searchParams.set('api-key', API_KEY)
   target.searchParams.set('include-related-images', 'false')
   target.searchParams.set('no-reject', 'true')
   target.searchParams.set('lang', 'en')
-
-  const targetUrl = target.toString()
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-  return { targetUrl, proxyUrl }
+  return target.toString()
 }
 
-async function callPlantNetIdentify(
-  imageFile: File,
-  organ: string,
-): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
-  const { targetUrl, proxyUrl } = buildProxiedPlantNetUrl()
+type CorsProxySpec = {
+  name: string
+  /** Build the browser-facing proxy URL for a given Pl@ntNet target. */
+  wrap: (targetUrl: string) => string
+}
 
-  const form = new FormData()
-  // Browser sets multipart/form-data + boundary — do NOT set Content-Type manually
-  form.append('images', imageFile, imageFile.name || 'plant.jpg')
-  form.append('organs', organ)
+/**
+ * Free, keyless CORS proxies (tried in order).
+ * - allorigins: requested primary
+ * - thingproxy: better at forwarding POST multipart FormData
+ */
+const CORS_PROXIES: CorsProxySpec[] = [
+  {
+    name: 'allorigins.win',
+    wrap: (targetUrl) =>
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+  },
+  {
+    name: 'thingproxy.freeboard.io',
+    wrap: (targetUrl) =>
+      `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+  },
+]
 
-  console.log('[Pl@ntNet] identify via CORS proxy', {
+type ProxyAttemptResult = {
+  proxyName: string
+  response: Response
+  bodyText: string
+  data: unknown
+}
+
+async function postFormThroughProxy(
+  proxy: CorsProxySpec,
+  targetUrl: string,
+  form: FormData,
+): Promise<ProxyAttemptResult> {
+  const proxyUrl = proxy.wrap(targetUrl)
+
+  console.log('[Pl@ntNet] trying CORS proxy', {
+    proxy: proxy.name,
     targetUrl: targetUrl.replace(API_KEY, `${API_KEY.slice(0, 6)}…`),
-    proxyHost: 'corsproxy.io',
-    organ,
-    fileName: imageFile.name,
-    fileSize: imageFile.size,
-    fileType: imageFile.type,
   })
 
   let response: Response
@@ -517,69 +534,91 @@ async function callPlantNetIdentify(
     response = await fetch(proxyUrl, {
       method: 'POST',
       body: form,
-      // Intentionally no headers — required for correct multipart boundaries
+      // No Content-Type — browser sets multipart boundary
     })
   } catch (error) {
-    console.error('Network/Proxy Error (Pl@ntNet via corsproxy):', error)
+    console.error(`[Pl@ntNet] proxy network error (${proxy.name}):`, error)
     throw new ServiceError(
-      `Proxy/Network Error: ${formatVisibleError(error)}`,
+      `Proxy/Network Error (${proxy.name}): ${formatVisibleError(error)}`,
       'NETWORK',
     )
   }
 
   const bodyText = await response.text()
   console.log(
-    '[Pl@ntNet] proxy HTTP status:',
+    `[Pl@ntNet] ${proxy.name} HTTP status:`,
     response.status,
     response.statusText,
   )
+  console.log(`[Pl@ntNet] ${proxy.name} raw body preview:`, bodyText.slice(0, 400))
 
   let data: unknown = null
   try {
     data = bodyText ? JSON.parse(bodyText) : null
   } catch (error) {
-    console.error(
-      'JSON Parse Error (proxy/PlantNet body):',
-      error,
-      bodyText.slice(0, 400),
-    )
     throw new ServiceError(
-      `JSON Parse Error: ${formatVisibleError(error)}. Body: ${bodyText.slice(0, 180)}`,
+      `JSON Parse Error (${proxy.name}): ${formatVisibleError(error)}. Body: ${bodyText.slice(0, 180)}`,
       'API_ERROR',
     )
   }
 
-  console.log('API Raw Response:', data)
+  return { proxyName: proxy.name, response, bodyText, data }
+}
 
-  const results = extractResultsList(data)
+async function callPlantNetIdentify(
+  imageFile: File,
+  organ: string,
+): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
+  const targetUrl = buildPlantNetTargetUrl()
+  const errors: string[] = []
 
-  if (!response.ok) {
-    if (results.length === 0) {
-      const detail = extractApiErrorMessage(
-        response.status,
-        response.statusText,
-        bodyText,
-        data,
-      )
-      console.error('Plant Identification Error (via proxy):', detail)
-      throw new ServiceError(
-        detail.includes('CORS') || response.status === 403
-          ? `Proxy/CORS Error: ${detail}`
-          : detail,
-        'API_ERROR',
-      )
+  for (const proxy of CORS_PROXIES) {
+    // Rebuild FormData each attempt (body stream can only be consumed once)
+    const attemptForm = new FormData()
+    attemptForm.append('images', imageFile, imageFile.name || 'plant.jpg')
+    attemptForm.append('organs', organ)
+
+    try {
+      const attempt = await postFormThroughProxy(proxy, targetUrl, attemptForm)
+      console.log('API Raw Response:', attempt.data)
+
+      const results = extractResultsList(attempt.data)
+
+      if (!attempt.response.ok && results.length === 0) {
+        const detail = extractApiErrorMessage(
+          attempt.response.status,
+          attempt.response.statusText,
+          attempt.bodyText,
+          attempt.data,
+        )
+        console.warn(`[Pl@ntNet] ${proxy.name} failed:`, detail)
+        errors.push(`${proxy.name}: ${detail}`)
+        continue
+      }
+
+      if (!attempt.response.ok && results.length > 0) {
+        console.warn(
+          `[Pl@ntNet] ${proxy.name} non-OK but results present — using results`,
+          attempt.response.status,
+        )
+      }
+
+      if (Array.isArray(attempt.data)) {
+        return attempt.data as PlantNetResult[]
+      }
+
+      return (attempt.data ?? { results }) as PlantNetIdentifyResponse
+    } catch (error) {
+      const message = formatVisibleError(error)
+      console.warn(`[Pl@ntNet] ${proxy.name} attempt error:`, message)
+      errors.push(`${proxy.name}: ${message}`)
     }
-    console.warn(
-      '[Pl@ntNet] non-OK status but results present — using results',
-      response.status,
-    )
   }
 
-  if (Array.isArray(data)) {
-    return data as PlantNetResult[]
-  }
-
-  return (data ?? { results }) as PlantNetIdentifyResponse
+  throw new ServiceError(
+    `كل بروكسيات CORS فشلت.\n${errors.join('\n') || 'لا تفاصيل إضافية.'}`,
+    'API_ERROR',
+  )
 }
 
 // ─── Public identify ─────────────────────────────────────────────────────────
