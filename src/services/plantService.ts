@@ -26,8 +26,11 @@ const API_KEY =
     ? import.meta.env.VITE_PLANTNET_API_KEY.trim()
     : '') || '2b10dRfDh71QvSzCP4smdtYoZe'
 
-/** Reject matches below this raw Pl@ntNet score (0–1). */
-const MIN_CONFIDENCE_SCORE = 0.08
+/**
+ * Soft floor for logging only. Any mappable `results[0]` is shown to the UI
+ * (Pl@ntNet flower matches often land around 5–15%).
+ */
+const MIN_CONFIDENCE_SCORE = 0.05
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -268,19 +271,23 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   const species = result.species
   if (!species) return null
 
-  const rawScientific =
-    readOptionalString(species.scientificNameWithoutAuthor) ||
-    readOptionalString(species.scientificName)
-  if (!rawScientific) return null
-
-  const scientificName =
-    extractBinomialScientificName(rawScientific) || rawScientific
-
-  const commonNames = (species.commonNames ?? [])
+  const commonNames = (Array.isArray(species.commonNames) ? species.commonNames : [])
     .map((n) => (typeof n === 'string' ? n.trim() : ''))
     .filter(Boolean)
 
+  const rawScientific =
+    readOptionalString(species.scientificNameWithoutAuthor) ||
+    readOptionalString(species.scientificName) ||
+    null
+
+  // Prefer commonNames[0], fall back to scientific name (and vice versa)
+  const scientificName = rawScientific
+    ? extractBinomialScientificName(rawScientific) || rawScientific
+    : commonNames[0] || null
+
   const commonName = commonNames[0] || scientificName
+  if (!commonName || !scientificName) return null
+
   const family =
     readOptionalString(species.family?.scientificNameWithoutAuthor) ||
     readOptionalString(species.family?.scientificName) ||
@@ -346,23 +353,57 @@ function mapPlantNetResponse(
   PlantIdentificationOutcome,
   { ok: false }
 > {
-  const ranked = [...(payload.results ?? [])].sort(
-    (a, b) => (b.score ?? 0) - (a.score ?? 0),
-  )
+  const results = Array.isArray(payload.results) ? payload.results : []
 
-  const candidates = ranked
-    .map(mapResultToCandidate)
-    .filter((c): c is PlantIdentificationCandidate => Boolean(c))
-    .slice(0, Math.max(1, maxResults))
-
-  const top = candidates[0]
-  if (!top || top.score < MIN_CONFIDENCE_SCORE) {
+  if (results.length === 0) {
+    console.warn('[Pl@ntNet] empty results[] — showing unrecognized message')
     return {
       ok: false,
-      code: 'LOW_CONFIDENCE',
+      code: 'NO_RESULTS',
       message: PLANTNET_UNRECOGNIZED_MESSAGE,
     }
   }
+
+  // Pl@ntNet already ranks by score; keep a defensive sort and map all usable rows
+  const ranked = [...results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+
+  const candidates = ranked
+    .map((result, index) => {
+      const mapped = mapResultToCandidate(result)
+      if (!mapped) {
+        console.warn('[Pl@ntNet] could not map result index', index, result)
+      }
+      return mapped
+    })
+    .filter((c): c is PlantIdentificationCandidate => Boolean(c))
+    .slice(0, Math.max(1, maxResults))
+
+  // If results[] has items, take the top mapped match (results[0] after sort)
+  const top = candidates[0]
+  if (!top) {
+    console.warn('[Pl@ntNet] results present but mapping failed', results[0])
+    return {
+      ok: false,
+      code: 'NO_RESULTS',
+      message: PLANTNET_UNRECOGNIZED_MESSAGE,
+    }
+  }
+
+  if (top.score < MIN_CONFIDENCE_SCORE) {
+    console.warn('[Pl@ntNet] low score — still showing result', {
+      score: top.score,
+      min: MIN_CONFIDENCE_SCORE,
+      commonName: top.commonName,
+      scientificName: top.scientificName,
+    })
+  }
+
+  console.log('[Pl@ntNet] top match', {
+    commonName: top.commonName,
+    scientificName: top.scientificName,
+    confidence: top.confidencePercent,
+    family: top.family,
+  })
 
   return {
     ok: true,
@@ -419,10 +460,6 @@ async function callPlantNetIdentify(
   }
 
   const bodyText = await response.text()
-  console.log('[Pl@ntNet] RAW response', {
-    status: response.status,
-    preview: bodyText.slice(0, 700),
-  })
 
   if (!response.ok) {
     console.error('Plant Identification Error:', {
@@ -433,12 +470,16 @@ async function callPlantNetIdentify(
     throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
   }
 
+  let data: PlantNetIdentifyResponse
   try {
-    return JSON.parse(bodyText) as PlantNetIdentifyResponse
+    data = JSON.parse(bodyText) as PlantNetIdentifyResponse
   } catch (error) {
     console.error('Plant Identification Error:', error)
     throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
   }
+
+  console.log('Pl@ntNet Response:', data)
+  return data
 }
 
 // ─── Public identify ─────────────────────────────────────────────────────────
