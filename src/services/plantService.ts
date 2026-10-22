@@ -26,12 +26,6 @@ const API_KEY =
     ? import.meta.env.VITE_PLANTNET_API_KEY.trim()
     : '') || '2b10dRfDh71QvSzCP4smdtYoZe'
 
-/**
- * Soft floor for logging only. Any mappable `results[0]` is shown to the UI
- * (Pl@ntNet flower matches often land around 5–15%).
- */
-const MIN_CONFIDENCE_SCORE = 0.05
-
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
 const ALLOWED_MIME_TYPES = new Set([
@@ -267,9 +261,16 @@ function readOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+/**
+ * Force-map a Pl@ntNet result row. Prefer commonNames[0]; if empty, use
+ * scientificNameWithoutAuthor as the primary display title.
+ */
 function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandidate | null {
   const species = result.species
-  if (!species) return null
+  if (!species || typeof species !== 'object') {
+    console.warn('[Pl@ntNet] result missing species', result)
+    return null
+  }
 
   const commonNames = (Array.isArray(species.commonNames) ? species.commonNames : [])
     .map((n) => (typeof n === 'string' ? n.trim() : ''))
@@ -278,15 +279,20 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   const rawScientific =
     readOptionalString(species.scientificNameWithoutAuthor) ||
     readOptionalString(species.scientificName) ||
-    null
+    ''
 
-  // Prefer commonNames[0], fall back to scientific name (and vice versa)
   const scientificName = rawScientific
     ? extractBinomialScientificName(rawScientific) || rawScientific
-    : commonNames[0] || null
+    : ''
 
+  // Fallback display: scientific name when commonNames is empty
   const commonName = commonNames[0] || scientificName
-  if (!commonName || !scientificName) return null
+  if (!commonName) {
+    console.warn('[Pl@ntNet] result has no common or scientific name', species)
+    return null
+  }
+
+  const resolvedScientific = scientificName || commonName
 
   const family =
     readOptionalString(species.family?.scientificNameWithoutAuthor) ||
@@ -295,7 +301,9 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   const genus =
     readOptionalString(species.genus?.scientificNameWithoutAuthor) ||
     readOptionalString(species.genus?.scientificName) ||
-    (scientificName.includes(' ') ? scientificName.split(/\s+/)[0] ?? null : null)
+    (resolvedScientific.includes(' ')
+      ? resolvedScientific.split(/\s+/)[0] ?? null
+      : null)
 
   const score =
     typeof result.score === 'number' && Number.isFinite(result.score)
@@ -304,7 +312,7 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   const confidence = Math.round(score * 100)
 
   const careInfo = buildCareInfo({
-    scientificName,
+    scientificName: resolvedScientific,
     family,
     genus,
   })
@@ -312,7 +320,7 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   return {
     name: commonName,
     commonName,
-    scientificName,
+    scientificName: resolvedScientific,
     scientificNameAuthorship:
       readOptionalString(species.scientificNameAuthorship),
     commonNames: commonNames.length > 0 ? commonNames : [commonName],
@@ -355,6 +363,8 @@ function mapPlantNetResponse(
 > {
   const results = Array.isArray(payload.results) ? payload.results : []
 
+  console.log('[Pl@ntNet] results length:', results.length)
+
   if (results.length === 0) {
     console.warn('[Pl@ntNet] empty results[] — showing unrecognized message')
     return {
@@ -364,24 +374,10 @@ function mapPlantNetResponse(
     }
   }
 
-  // Pl@ntNet already ranks by score; keep a defensive sort and map all usable rows
-  const ranked = [...results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-
-  const candidates = ranked
-    .map((result, index) => {
-      const mapped = mapResultToCandidate(result)
-      if (!mapped) {
-        console.warn('[Pl@ntNet] could not map result index', index, result)
-      }
-      return mapped
-    })
-    .filter((c): c is PlantIdentificationCandidate => Boolean(c))
-    .slice(0, Math.max(1, maxResults))
-
-  // If results[] has items, take the top mapped match (results[0] after sort)
-  const top = candidates[0]
-  if (!top) {
-    console.warn('[Pl@ntNet] results present but mapping failed', results[0])
+  // No score filtering — immediately take results[0], then map remaining rows
+  const first = mapResultToCandidate(results[0]!)
+  if (!first) {
+    console.warn('[Pl@ntNet] results[0] mapping failed', results[0])
     return {
       ok: false,
       code: 'NO_RESULTS',
@@ -389,28 +385,33 @@ function mapPlantNetResponse(
     }
   }
 
-  if (top.score < MIN_CONFIDENCE_SCORE) {
-    console.warn('[Pl@ntNet] low score — still showing result', {
-      score: top.score,
-      min: MIN_CONFIDENCE_SCORE,
-      commonName: top.commonName,
-      scientificName: top.scientificName,
+  const rest = results
+    .slice(1)
+    .map((result, index) => {
+      const mapped = mapResultToCandidate(result)
+      if (!mapped) {
+        console.warn('[Pl@ntNet] could not map result index', index + 1, result)
+      }
+      return mapped
     })
-  }
+    .filter((c): c is PlantIdentificationCandidate => Boolean(c))
 
-  console.log('[Pl@ntNet] top match', {
-    commonName: top.commonName,
-    scientificName: top.scientificName,
-    confidence: top.confidencePercent,
-    family: top.family,
+  const candidates = [first, ...rest].slice(0, Math.max(1, maxResults))
+
+  console.log('[Pl@ntNet] displaying results[0]', {
+    commonName: first.commonName,
+    scientificName: first.scientificName,
+    score: first.score,
+    confidence: first.confidencePercent,
+    family: first.family,
   })
 
   return {
     ok: true,
     isPlant: true,
     message: null,
-    bestMatch: top.scientificName,
-    primary: toNormalizedMatch(top),
+    bestMatch: first.scientificName,
+    primary: toNormalizedMatch(first),
     candidates,
     identifiedAt: new Date().toISOString(),
   }
@@ -432,8 +433,9 @@ async function callPlantNetIdentify(
   const url = new URL(PLANTNET_BASE_URL)
   url.searchParams.set('api-key', API_KEY)
   url.searchParams.set('include-related-images', 'false')
-  url.searchParams.set('no-reject', 'false')
-  url.searchParams.set('lang', 'ar')
+  // Return suggestions even when confidence is low (avoids empty/404 rejections)
+  url.searchParams.set('no-reject', 'true')
+  url.searchParams.set('lang', 'en')
 
   const form = new FormData()
   form.append('images', imageFile, imageFile.name || 'plant.jpg')
@@ -455,30 +457,42 @@ async function callPlantNetIdentify(
       body: form,
     })
   } catch (error) {
-    console.error('Plant Identification Error:', error)
+    console.error('Network Error (Pl@ntNet fetch failed):', error)
     throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'NETWORK')
   }
 
   const bodyText = await response.text()
+  console.log('[Pl@ntNet] HTTP status:', response.status)
 
-  if (!response.ok) {
+  let data: PlantNetIdentifyResponse | null = null
+  try {
+    data = JSON.parse(bodyText) as PlantNetIdentifyResponse
+  } catch (error) {
+    console.error('JSON Parse Error (Pl@ntNet body):', error, bodyText.slice(0, 400))
+    throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
+  }
+
+  console.log('API Raw Response:', data)
+
+  // If the body already contains results, use them even on non-2xx (e.g. soft 404)
+  const hasResults =
+    Array.isArray(data.results) && data.results.length > 0
+
+  if (!response.ok && !hasResults) {
     console.error('Plant Identification Error:', {
       status: response.status,
       body: bodyText.slice(0, 400),
     })
-    // 404 = species not found / not a plant for Pl@ntNet
     throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
   }
 
-  let data: PlantNetIdentifyResponse
-  try {
-    data = JSON.parse(bodyText) as PlantNetIdentifyResponse
-  } catch (error) {
-    console.error('Plant Identification Error:', error)
-    throw new ServiceError(PLANTNET_UNRECOGNIZED_MESSAGE, 'API_ERROR')
+  if (!response.ok && hasResults) {
+    console.warn(
+      '[Pl@ntNet] non-OK status but results[] present — using results anyway',
+      response.status,
+    )
   }
 
-  console.log('Pl@ntNet Response:', data)
   return data
 }
 
