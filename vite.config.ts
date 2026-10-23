@@ -41,10 +41,17 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
         rewrite: () => {
-          const key =
+          // Server-side only during `npm run dev` — never shipped to the browser
+          const key = (
             process.env.PLANTNET_API_KEY ||
             process.env.VITE_PLANTNET_API_KEY ||
-            '2b10dRfDh71QvSzCP4smdtYoZe'
+            ''
+          ).trim()
+          if (!key) {
+            throw new Error(
+              'Set PLANTNET_API_KEY (or VITE_PLANTNET_API_KEY) in .env for local Vite proxy.',
+            )
+          }
           return `/v2/identify/all?api-key=${encodeURIComponent(key)}&include-related-images=false&no-reject=true&lang=en`
         },
       },

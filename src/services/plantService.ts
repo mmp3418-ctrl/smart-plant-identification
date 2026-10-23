@@ -14,15 +14,10 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * Secure serverless proxy (Vercel `/api/identify`).
- * The Pl@ntNet API key stays on the server — never exposed in the browser bundle.
- * Override with `VITE_IDENTIFY_API_URL` if the function is hosted elsewhere.
+ * Always call our Vercel serverless proxy — never my-api.plantnet.org from the browser.
+ * The Pl@ntNet API key exists only in `process.env.PLANTNET_API_KEY` on the server.
  */
-const IDENTIFY_API_URL =
-  (typeof import.meta.env.VITE_IDENTIFY_API_URL === 'string' &&
-  import.meta.env.VITE_IDENTIFY_API_URL.trim()
-    ? import.meta.env.VITE_IDENTIFY_API_URL.trim()
-    : '/api/identify')
+const IDENTIFY_API_URL = '/api/identify'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -476,11 +471,19 @@ async function callPlantNetIdentify(
   imageFile: File,
   organ: string,
 ): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
+  // Guard: never allow accidental direct Pl@ntNet calls from the client bundle
+  if (/plantnet\.org/i.test(IDENTIFY_API_URL)) {
+    throw new ServiceError(
+      'إعداد غير آمن: يجب أن يمر التعريف عبر /api/identify فقط.',
+      'API_ERROR',
+    )
+  }
+
   const form = new FormData()
   form.append('images', imageFile, imageFile.name || 'plant.jpg')
   form.append('organs', organ)
 
-  console.log('[Pl@ntNet] identify via serverless proxy', {
+  console.log('[Identify] POST /api/identify (serverless proxy)', {
     endpoint: IDENTIFY_API_URL,
     organ,
     fileName: imageFile.name,
@@ -495,9 +498,9 @@ async function callPlantNetIdentify(
       // Do NOT set Content-Type — browser sets multipart boundary
     })
   } catch (error) {
-    console.error('[Pl@ntNet] network error:', error)
+    console.error('[Identify] network error calling /api/identify:', error)
     throw new ServiceError(
-      `تعذّر الاتصال بخدمة التعريف: ${formatVisibleError(error)}`,
+      `تعذّر الاتصال بخدمة التعريف (/api/identify): ${formatVisibleError(error)}`,
       'NETWORK',
     )
   }

@@ -41,11 +41,12 @@ export default async function handler(request) {
     return jsonResponse(405, { error: 'Method not allowed. Use POST.' })
   }
 
-  const apiKey = (process.env.PLANTNET_API_KEY || '').trim()
+  // Key is server-only — never read from the request body or query string
+  const apiKey = String(process.env.PLANTNET_API_KEY || '').trim()
   if (!apiKey) {
     return jsonResponse(500, {
       error:
-        'PLANTNET_API_KEY is not configured on the server. Set it in Vercel Environment Variables.',
+        'PLANTNET_API_KEY is not configured on the server. Add it in Vercel → Settings → Environment Variables, then redeploy.',
     })
   }
 
@@ -86,6 +87,19 @@ export default async function handler(request) {
     const text = await upstream.text()
     const contentType =
       upstream.headers.get('Content-Type') || 'application/json; charset=utf-8'
+
+    // Surface PlantNet IP allowlist failures clearly (common with Vercel egress IPs)
+    if (
+      upstream.status === 403 &&
+      /remote IP not allowed|IP not allowed|forbidden/i.test(text)
+    ) {
+      return jsonResponse(403, {
+        error:
+          'Pl@ntNet رفض عنوان IP الخاص بخادم Vercel (remote IP not allowed). في لوحة Pl@ntNet عطّل تقييد IP للمفتاح، أو اسمح بكل العناوين عند استخدام مفتاح من السيرفر فقط.',
+        upstreamStatus: upstream.status,
+        upstreamBody: text.slice(0, 400),
+      })
+    }
 
     return new Response(text, {
       status: upstream.status,
