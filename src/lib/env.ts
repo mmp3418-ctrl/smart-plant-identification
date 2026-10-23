@@ -23,8 +23,6 @@ function isPlaceholder(value: string): boolean {
   return (
     lower.includes('your-project') ||
     lower.includes('your-anon-key') ||
-    lower.includes('your-plantnet') ||
-    lower.includes('your-plant-id') ||
     lower.startsWith('your-')
   )
 }
@@ -33,14 +31,6 @@ function readEnv(value: unknown): string {
   const normalized = normalizeEnvValue(value)
   if (!normalized || isPlaceholder(normalized)) return ''
   return normalized
-}
-
-/**
- * Optional client-side Pl@ntNet key (local Vite proxy only).
- * Production identify calls use server env `PLANTNET_API_KEY` via `/api/identify`.
- */
-export function readPlantNetApiKey(): string {
-  return readEnv(import.meta.env.VITE_PLANTNET_API_KEY)
 }
 
 export function readSupabaseUrl(): string {

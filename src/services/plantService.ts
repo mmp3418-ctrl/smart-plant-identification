@@ -14,10 +14,11 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * Always call our Vercel serverless proxy — never my-api.plantnet.org from the browser.
- * The Pl@ntNet API key exists only in `process.env.PLANTNET_API_KEY` on the server.
+ * Frontend identify endpoint — local Vercel serverless proxy only.
+ * Never call my-api.plantnet.org from the browser; never send an API key from the client.
+ * The key lives only in server env `PLANTNET_API_KEY` (`api/identify.js` / Vite Node proxy).
  */
-const IDENTIFY_API_URL = '/api/identify'
+const IDENTIFY_API_URL = '/api/identify' as const
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -492,7 +493,8 @@ async function callPlantNetIdentify(
 
   let response: Response
   try {
-    response = await fetch(IDENTIFY_API_URL, {
+    // POST FormData only — no api-key query/header; proxy adds the key server-side.
+    response = await fetch('/api/identify', {
       method: 'POST',
       body: form,
       // Do NOT set Content-Type — browser sets multipart boundary
