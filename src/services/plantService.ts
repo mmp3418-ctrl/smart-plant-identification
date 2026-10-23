@@ -13,18 +13,16 @@ import { compressImageForUpload } from '@/services/imageUtils'
 import { extractBinomialScientificName } from '@/lib/scientificName'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const PLANTNET_BASE_URL = 'https://my-api.plantnet.org/v2/identify/all'
-
 /**
- * Prefer Vite env at build time; fall back to embedded key so production
- * never fails when `VITE_PLANTNET_API_KEY` was not injected during deploy.
+ * Secure serverless proxy (Vercel `/api/identify`).
+ * The Pl@ntNet API key stays on the server — never exposed in the browser bundle.
+ * Override with `VITE_IDENTIFY_API_URL` if the function is hosted elsewhere.
  */
-const API_KEY =
-  (typeof import.meta.env.VITE_PLANTNET_API_KEY === 'string' &&
-  import.meta.env.VITE_PLANTNET_API_KEY.trim() &&
-  import.meta.env.VITE_PLANTNET_API_KEY.trim() !== 'undefined'
-    ? import.meta.env.VITE_PLANTNET_API_KEY.trim()
-    : '') || '2b10dRfDh71QvSzCP4smdtYoZe'
+const IDENTIFY_API_URL =
+  (typeof import.meta.env.VITE_IDENTIFY_API_URL === 'string' &&
+  import.meta.env.VITE_IDENTIFY_API_URL.trim()
+    ? import.meta.env.VITE_IDENTIFY_API_URL.trim()
+    : '/api/identify')
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
@@ -44,7 +42,8 @@ export const PLANTNET_UNRECOGNIZED_MESSAGE =
 // ─── Public helpers ──────────────────────────────────────────────────────────
 
 export function isPlantNetApiConfigured(): boolean {
-  return API_KEY.length > 0
+  // Identify always goes through the serverless proxy; key lives on the server.
+  return true
 }
 
 export function validatePlantImage(file: File): void {
@@ -471,30 +470,18 @@ function extractApiErrorMessage(
   return `خطأ من Pl@ntNet (HTTP ${status} ${statusText || ''})`.trim()
 }
 
-// ─── API call (direct — domain whitelisted on Pl@ntNet) ──────────────────────
-
-/** Official Pl@ntNet v2 identify URL with API key. */
-function buildPlantNetUrl(): string {
-  const url = new URL(PLANTNET_BASE_URL)
-  url.searchParams.set('api-key', API_KEY)
-  url.searchParams.set('include-related-images', 'false')
-  url.searchParams.set('no-reject', 'true')
-  url.searchParams.set('lang', 'en')
-  return url.toString()
-}
+// ─── API call (via Vercel serverless proxy — no browser CORS) ────────────────
 
 async function callPlantNetIdentify(
   imageFile: File,
   organ: string,
 ): Promise<PlantNetIdentifyResponse | PlantNetResult[]> {
-  const endpoint = buildPlantNetUrl()
-
   const form = new FormData()
   form.append('images', imageFile, imageFile.name || 'plant.jpg')
   form.append('organs', organ)
 
-  console.log('[Pl@ntNet] direct identify', {
-    endpoint: `${PLANTNET_BASE_URL}?api-key=***`,
+  console.log('[Pl@ntNet] identify via serverless proxy', {
+    endpoint: IDENTIFY_API_URL,
     organ,
     fileName: imageFile.name,
     fileSize: imageFile.size,
@@ -502,7 +489,7 @@ async function callPlantNetIdentify(
 
   let response: Response
   try {
-    response = await fetch(endpoint, {
+    response = await fetch(IDENTIFY_API_URL, {
       method: 'POST',
       body: form,
       // Do NOT set Content-Type — browser sets multipart boundary
@@ -510,7 +497,7 @@ async function callPlantNetIdentify(
   } catch (error) {
     console.error('[Pl@ntNet] network error:', error)
     throw new ServiceError(
-      `تعذّر الاتصال بـ Pl@ntNet: ${formatVisibleError(error)}`,
+      `تعذّر الاتصال بخدمة التعريف: ${formatVisibleError(error)}`,
       'NETWORK',
     )
   }
@@ -527,6 +514,20 @@ async function callPlantNetIdentify(
   }
 
   console.log('API Raw Response:', data)
+
+  // Proxy-level error payload: { error: "..." }
+  if (
+    data &&
+    typeof data === 'object' &&
+    'error' in data &&
+    typeof (data as { error: unknown }).error === 'string' &&
+    extractResultsList(data).length === 0
+  ) {
+    throw new ServiceError(
+      (data as { error: string }).error,
+      response.status >= 500 ? 'API_ERROR' : 'API_ERROR',
+    )
+  }
 
   const results = extractResultsList(data)
 
@@ -552,8 +553,7 @@ async function callPlantNetIdentify(
 // ─── Public identify ─────────────────────────────────────────────────────────
 
 /**
- * Core platform engine: identify a plant image via the official Pl@ntNet v2 API
- * (direct browser call — domain whitelisted with exposed API key).
+ * Identify a plant image via `/api/identify` (Vercel serverless → Pl@ntNet).
  */
 export async function identifyPlant(
   file: File,

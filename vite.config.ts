@@ -19,4 +19,25 @@ export default defineConfig({
       '@': path.resolve(rootDir, './src'),
     },
   },
+  /**
+   * Local-dev stand-in for Vercel `/api/identify` — proxies FormData POST
+   * to Pl@ntNet from the Vite Node server (no browser CORS).
+   * Production uses the real Vercel serverless function instead.
+   */
+  server: {
+    proxy: {
+      '/api/identify': {
+        target: 'https://my-api.plantnet.org',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => {
+          const key =
+            process.env.PLANTNET_API_KEY ||
+            process.env.VITE_PLANTNET_API_KEY ||
+            '2b10dRfDh71QvSzCP4smdtYoZe'
+          return `/v2/identify/all?api-key=${encodeURIComponent(key)}&include-related-images=false&no-reject=true&lang=en`
+        },
+      },
+    },
+  },
 })
