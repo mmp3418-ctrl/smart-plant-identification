@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
@@ -30,20 +30,25 @@
           }
         } catch (e) {}
 
-        /* If opened via a non-hash deep link on GH Pages, prefer hash routing */
+        /* GitHub Pages only: rewrite non-hash deep links into HashRouter URLs */
         try {
-          var base = '/smart-plant-identification';
+          var ghBase = '/smart-plant-identification';
           var path = location.pathname || '';
           var hash = location.hash || '';
+          var onGitHubPages =
+            location.hostname.indexOf('github.io') !== -1 &&
+            path.indexOf(ghBase) === 0;
           if (
-            path.indexOf(base) === 0 &&
-            path !== base &&
-            path !== base + '/' &&
+            onGitHubPages &&
+            path !== ghBase &&
+            path !== ghBase + '/' &&
             (!hash || hash === '#')
           ) {
-            var relative = path.slice(base.length) || '/';
+            var relative = path.slice(ghBase.length) || '/';
             if (relative.charAt(0) !== '/') relative = '/' + relative;
-            location.replace(base + '/#' + relative + (location.search || ''));
+            location.replace(
+              ghBase + '/#' + relative + (location.search || ''),
+            );
           }
         } catch (e2) {}
       })();
@@ -51,6 +56,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- Vite entry (resolved relative to base at build time) -->
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

@@ -10,8 +10,18 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
  * Vite loads `VITE_*` from `.env` / process env automatically.
  * Do not hardcode secrets here — use `.env` locally and GitHub Actions secrets in CI.
  */
+/**
+ * Relative base so built JS/CSS resolve on:
+ * - Vercel root (https://*.vercel.app/)
+ * - GitHub Pages subpath (/smart-plant-identification/)
+ * Absolute `/smart-plant-identification/` caused 404 white screens on Vercel.
+ */
+const appBase =
+  process.env.VITE_BASE_PATH?.trim() ||
+  (process.env.VERCEL ? '/' : '/smart-plant-identification/')
+
 export default defineConfig({
-  base: '/smart-plant-identification/',
+  base: appBase,
   envPrefix: 'VITE_',
   plugins: [react(), tailwindcss()],
   resolve: {
