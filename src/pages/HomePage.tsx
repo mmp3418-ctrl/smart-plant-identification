@@ -4,8 +4,8 @@ import { Camera, ArrowLeft, Upload } from 'lucide-react'
 import { Button, Badge } from '@/components/ui'
 import { PlantCard } from '@/components/plants/PlantCard'
 import { PlantSearchField } from '@/components/plants/PlantSearchField'
-import { getPopularPlants } from '@/services/plants'
 import { useSiteContent } from '@/context/ContentContext'
+import { usePlantCatalog } from '@/context/PlantCatalogContext'
 import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
@@ -16,6 +16,7 @@ const accentBorder: Record<string, string> = {
 }
 
 export function HomePage() {
+  const { getPopularPlants } = usePlantCatalog()
   const popular = getPopularPlants(6)
   const { content } = useSiteContent()
   const { hero, popularSection, features } = content.home
@@ -110,19 +111,25 @@ export function HomePage() {
           ) : null}
         </div>
 
-        <motion.div
-          className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 lg:grid-cols-3 lg:gap-5"
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, amount: 0.08 }}
-        >
-          {popular.map((plant) => (
-            <motion.div key={plant.id} variants={fadeUp}>
-              <PlantCard plant={plant} />
-            </motion.div>
-          ))}
-        </motion.div>
+        {popular.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-line/80 glass-panel px-4 py-10 text-center text-sm text-muted">
+            لا توجد نباتات شائعة بعد. أضف نباتات من لوحة التحكم وفعّل خيار «شائع».
+          </p>
+        ) : (
+          <motion.div
+            className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 lg:grid-cols-3 lg:gap-5"
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.08 }}
+          >
+            {popular.map((plant) => (
+              <motion.div key={plant.id} variants={fadeUp}>
+                <PlantCard plant={plant} />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
       </section>
 
       <section className="border-t border-white/40 glass-panel dark:border-stone-700/40">

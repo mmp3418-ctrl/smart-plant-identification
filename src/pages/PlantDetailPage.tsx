@@ -11,12 +11,13 @@ import {
 } from 'lucide-react'
 import { Badge, Button, EmptyState } from '@/components/ui'
 import { useAppData } from '@/context/AppDataContext'
-import { getPlantById } from '@/services/plants'
+import { usePlantCatalog } from '@/context/PlantCatalogContext'
 import { cn } from '@/lib/cn'
 
 export function PlantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
+  const { getPlantById } = usePlantCatalog()
   const plant = id ? getPlantById(id) : undefined
   const { isFavorite, toggleFavorite } = useAppData()
 
@@ -73,10 +74,10 @@ export function PlantDetailPage() {
       <div className="container-app py-6 sm:py-8 lg:py-10">
         <div className="grid gap-6 lg:grid-cols-[1.05fr_1fr] lg:gap-10">
           {/* Image */}
-          <div className="overflow-hidden rounded-lg border border-line bg-canvas">
+          <div className="overflow-hidden rounded-2xl border border-line bg-canvas glass-panel">
             <img
-              src={plant.imageUrl}
-              alt={plant.arabicName}
+              src={plant.coverImageUrl || plant.imageUrl}
+              alt={plant.title || plant.arabicName}
               className="aspect-[4/3] w-full object-cover sm:aspect-[5/4]"
             />
           </div>
@@ -85,14 +86,16 @@ export function PlantDetailPage() {
           <div>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm text-muted">{plant.category}</p>
+                <p className="text-sm text-muted">
+                  {plant.classification || plant.category}
+                </p>
                 <h1 className="mt-1 text-2xl font-extrabold text-ink sm:text-3xl">
-                  {plant.arabicName}
+                  {plant.title || plant.commonName || plant.arabicName}
                 </h1>
                 <p className="mt-1 text-sm italic text-muted">
                   {plant.scientificName}
                 </p>
-                <p className="mt-1 text-xs text-muted">العائلة: {plant.family}</p>
+                <p className="mt-1 text-xs text-muted">العائلة: {plant.family || '—'}</p>
               </div>
               <Button
                 variant={favorite ? 'secondary' : 'outline'}
@@ -144,6 +147,9 @@ export function PlantDetailPage() {
                 variant="brand"
                 values={plant.suitableRegions}
               />
+              {plant.tags.length > 0 ? (
+                <TagRow label="وسوم" variant="brand" values={plant.tags} />
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-semibold text-muted">سهولة العناية</span>
                 <Badge variant="default">{plant.careDifficulty}</Badge>
@@ -154,21 +160,28 @@ export function PlantDetailPage() {
 
         {/* Care guide */}
         <section className="mt-8 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-line bg-surface p-5">
+          <div className="rounded-2xl border border-line bg-surface p-5 glass-panel">
             <h2 className="text-base font-bold text-ink">دليل العناية</h2>
-            <ol className="mt-3 space-y-2.5">
-              {plant.careGuide.map((step, index) => (
-                <li key={step} className="flex gap-3 text-sm text-muted leading-relaxed">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand">
-                    {index + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
+            {plant.careGuide.length > 0 ? (
+              <ol className="mt-3 space-y-2.5">
+                {plant.careGuide.map((step, index) => (
+                  <li
+                    key={`${step}-${index}`}
+                    className="flex gap-3 text-sm leading-relaxed text-muted"
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand">
+                      {index + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-3 text-sm text-muted">لم تُضف إرشادات عناية بعد.</p>
+            )}
           </div>
 
-          <div className="rounded-lg border border-line bg-surface p-5">
+          <div className="rounded-2xl border border-line bg-surface p-5 glass-panel">
             <h2 className="flex items-center gap-2 text-base font-bold text-ink">
               <AlertTriangle className="size-4 text-warning" aria-hidden />
               تحذيرات مهمة
@@ -189,6 +202,36 @@ export function PlantDetailPage() {
             )}
           </div>
         </section>
+
+        {plant.diseases.length > 0 ? (
+          <section className="mt-4 rounded-2xl border border-line bg-surface p-5 glass-panel">
+            <h2 className="text-base font-bold text-ink">الأمراض والتدابير الوقائية</h2>
+            <div className="mt-4 space-y-3">
+              {plant.diseases.map((disease) => (
+                <article
+                  key={disease.id}
+                  className="rounded-xl border border-line/70 bg-canvas/60 p-4"
+                >
+                  <h3 className="text-sm font-bold text-ink">{disease.name}</h3>
+                  <p className="mt-2 text-xs text-muted">
+                    <span className="font-semibold text-ink">الأعراض: </span>
+                    {disease.symptoms || '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    <span className="font-semibold text-ink">الوقاية: </span>
+                    {disease.prevention || '—'}
+                  </p>
+                  {disease.treatment ? (
+                    <p className="mt-1 text-xs text-muted">
+                      <span className="font-semibold text-ink">العلاج: </span>
+                      {disease.treatment}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </div>
   )

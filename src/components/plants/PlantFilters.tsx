@@ -1,7 +1,9 @@
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { usePlantCatalog } from '@/context/PlantCatalogContext'
 import { cn } from '@/lib/cn'
 import {
+  CATEGORY_OPTIONS,
   DIFFICULTY_OPTIONS,
   ENVIRONMENT_OPTIONS,
   SOIL_OPTIONS,
@@ -56,31 +58,42 @@ export function PlantFiltersPanel({
   onChange,
   className,
 }: PlantFiltersProps) {
+  const { getCategories } = usePlantCatalog()
+  const dynamicCategories = getCategories()
+  const categoryOptions =
+    dynamicCategories.length > 0
+      ? dynamicCategories
+      : [...CATEGORY_OPTIONS]
+
   const hasActive =
     filters.soilTypes.length > 0 ||
     filters.environments.length > 0 ||
     filters.sunlight !== null ||
-    filters.difficulty !== null
+    filters.difficulty !== null ||
+    Boolean(filters.category) ||
+    filters.tags.length > 0
+
+  function clearFilters() {
+    onChange({
+      ...filters,
+      soilTypes: [],
+      environments: [],
+      sunlight: null,
+      difficulty: null,
+      category: null,
+      tags: [],
+    })
+  }
 
   return (
     <aside className={cn('space-y-6', className)}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-ink dark:text-stone-100">
-          تصفية النتائج
-        </h2>
+        <h2 className="text-sm font-bold text-ink">تصفية النتائج</h2>
         {hasActive ? (
           <button
             type="button"
-            onClick={() =>
-              onChange({
-                ...filters,
-                soilTypes: [],
-                environments: [],
-                sunlight: null,
-                difficulty: null,
-              })
-            }
-            className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted dark:text-stone-300 hover:text-brand dark:hover:text-emerald-300"
+            onClick={clearFilters}
+            className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted hover:text-brand"
           >
             <X className="size-3.5" aria-hidden />
             مسح الفلاتر
@@ -89,7 +102,29 @@ export function PlantFiltersPanel({
       </div>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted dark:text-stone-400">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          التصنيف
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {categoryOptions.map((category) => (
+            <FilterChip
+              key={category}
+              active={filters.category === category}
+              onClick={() =>
+                onChange({
+                  ...filters,
+                  category: filters.category === category ? null : category,
+                })
+              }
+            >
+              {category}
+            </FilterChip>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
           نوع التربة
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -186,19 +221,7 @@ export function PlantFiltersPanel({
       </section>
 
       {hasActive ? (
-        <Button
-          variant="outline"
-          fullWidth
-          onClick={() =>
-            onChange({
-              ...filters,
-              soilTypes: [],
-              environments: [],
-              sunlight: null,
-              difficulty: null,
-            })
-          }
-        >
+        <Button variant="outline" fullWidth onClick={clearFilters}>
           إعادة تعيين
         </Button>
       ) : null}

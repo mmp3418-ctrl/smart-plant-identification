@@ -5,7 +5,7 @@ import { Button, EmptyState, Spinner } from '@/components/ui'
 import { PlantCard } from '@/components/plants/PlantCard'
 import { useAuth } from '@/context/AuthContext'
 import { useAppData } from '@/context/AppDataContext'
-import { getPlantById } from '@/services/plants'
+import { usePlantCatalog } from '@/context/PlantCatalogContext'
 import { fetchFavoritePlantSummaries } from '@/services/favoritesService'
 import type { Plant } from '@/types/plant'
 import type { FavoritePlantSummary } from '@/types/userData'
@@ -13,6 +13,7 @@ import type { FavoritePlantSummary } from '@/types/userData'
 export function FavoritesPage() {
   const { user, loading: authLoading } = useAuth()
   const { favorites, dataLoading, dataError, refreshUserData } = useAppData()
+  const { getPlantById } = usePlantCatalog()
   const [remoteSummaries, setRemoteSummaries] = useState<FavoritePlantSummary[]>(
     [],
   )
@@ -23,7 +24,7 @@ export function FavoritesPage() {
       favorites
         .map((id) => getPlantById(id))
         .filter((plant): plant is Plant => Boolean(plant)),
-    [favorites],
+    [favorites, getPlantById],
   )
 
   const unresolvedIds = useMemo(() => {

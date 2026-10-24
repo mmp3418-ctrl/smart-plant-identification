@@ -27,8 +27,8 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         className="relative block aspect-[4/3] overflow-hidden bg-surface"
       >
         <img
-          src={plant.imageUrl}
-          alt={plant.arabicName}
+          src={plant.coverImageUrl || plant.imageUrl}
+          alt={plant.title || plant.arabicName}
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
         />
@@ -62,7 +62,7 @@ export function PlantCard({ plant, className }: PlantCardProps) {
             to={`/plants/${plant.id}`}
             className="block text-base font-extrabold tracking-tight text-ink transition-colors hover:text-brand"
           >
-            {plant.arabicName}
+            {plant.title || plant.commonName || plant.arabicName}
           </Link>
           <p className="mt-0.5 text-xs italic font-medium tracking-wide text-muted">
             {plant.scientificName}
@@ -74,14 +74,17 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         </p>
 
         <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+          {plant.category ? (
+            <Badge variant="brand">{plant.category}</Badge>
+          ) : null}
           {plant.soilTypes.slice(0, 2).map((soil) => (
             <Badge key={soil} variant="soil">
               {soil}
             </Badge>
           ))}
-          {plant.environments.slice(0, 1).map((env) => (
-            <Badge key={env} variant="sage">
-              {env}
+          {plant.tags.slice(0, 1).map((tag) => (
+            <Badge key={tag} variant="sage">
+              {tag}
             </Badge>
           ))}
         </div>
