@@ -12,7 +12,7 @@ export function RootLayout() {
     <div className="flex min-h-dvh flex-col">
       {!isIdentifyCapture ? <Header /> : null}
       <RouteLoadingOverlay />
-      <main className={cn('flex-1', isIdentifyCapture && 'bg-[#142D21]')}>
+      <main className={cn('flex-1', isIdentifyCapture && 'bg-[#070d18]')}>
         <div key={location.pathname} className="page-enter">
           <Outlet />
         </div>

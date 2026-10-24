@@ -1,4 +1,4 @@
-/** Plant identification contracts (Pl@ntNet API v2) */
+/** Plant identification contracts (Pl@ntNet API v2 + enriched care/health) */
 
 export interface IdentifyImageOptions {
   /** Max suggestions to keep after ranking (default 5). */
@@ -10,9 +10,29 @@ export interface IdentifyImageOptions {
 /** Structured Arabic care guidelines derived for the identified species. */
 export interface PlantCareInfo {
   watering: string
+  /** Precise schedule phrasing (e.g. every N days / when surface dry) */
+  wateringSchedule: string
   light: string
   temperature: string
+  humidity: string
   soil: string
+  propagation: string
+}
+
+/** Single disease / health issue entry for the species profile. */
+export interface PlantDiseaseInfo {
+  id: string
+  name: string
+  symptoms: string
+  prevention: string
+  treatment: string
+  severity: 'low' | 'medium' | 'high'
+}
+
+/** Aggregated health block shown on result pages. */
+export interface PlantHealthProfile {
+  summary: string
+  diseases: PlantDiseaseInfo[]
 }
 
 /**
@@ -26,6 +46,7 @@ export interface NormalizedPlantMatch {
   confidence: number
   family: string
   careInfo: PlantCareInfo
+  health: PlantHealthProfile
 }
 
 export interface PlantIdentificationCandidate {
@@ -45,12 +66,16 @@ export interface PlantIdentificationCandidate {
   taxonId: string | null
   description: string | null
   watering: string | null
+  wateringSchedule: string | null
   light: string | null
   temperature: string | null
+  humidity: string | null
   soil: string | null
+  propagation: string | null
   environment: string | null
   careGuide: string | null
   careInfo: PlantCareInfo
+  health: PlantHealthProfile
   healthStatus: string | null
   detailUrl: string | null
 }
@@ -97,6 +122,8 @@ export interface PlantIdentificationPrimarySummary {
   light: string | null
   temperature: string | null
   soil: string | null
+  humidity: string | null
+  propagation: string | null
   isPlant: boolean
   message: string | null
 }
@@ -108,7 +135,6 @@ export interface PlantNetNamedTaxon {
   scientificNameAuthorship?: string
   scientificName?: string
 }
-
 export interface PlantNetSpecies {
   scientificNameWithoutAuthor?: string
   scientificNameAuthorship?: string

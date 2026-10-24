@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { AppDataProvider } from '@/context/AppDataContext'
+import { ContentProvider } from '@/context/ContentContext'
 import { ThemeProvider } from '@/context/ThemeContext'
 import { SplashScreen } from '@/components/system/SplashScreen'
 import { RootLayout } from '@/layouts/RootLayout'
@@ -30,33 +31,35 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppDataProvider>
-          {showSplash ? (
-            <SplashScreen onComplete={handleSplashComplete} />
-          ) : null}
+      <ContentProvider>
+        <AuthProvider>
+          <AppDataProvider>
+            {showSplash ? (
+              <SplashScreen onComplete={handleSplashComplete} />
+            ) : null}
 
-          <HashRouter>
-            <Routes>
-              <Route element={<RootLayout />}>
-                <Route index element={<HomePage />} />
-                <Route path="directory" element={<DirectoryPage />} />
-                <Route path="identify" element={<IdentifyPage />} />
-                <Route path="identify/result" element={<IdentifyResultPage />} />
-                <Route path="plants/:id" element={<PlantDetailPage />} />
-                <Route path="favorites" element={<FavoritesPage />} />
-                <Route path="history" element={<HistoryPage />} />
-                <Route path="admin" element={<AdminPage />} />
-                <Route path="about" element={<AboutPage />} />
-                <Route path="login" element={<LoginPage />} />
-                <Route path="register" element={<RegisterPage />} />
-                {/* Unknown hash routes → home (never blank / crash) */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
-          </HashRouter>
-        </AppDataProvider>
-      </AuthProvider>
+            <HashRouter>
+              <Routes>
+                <Route element={<RootLayout />}>
+                  <Route index element={<HomePage />} />
+                  <Route path="directory" element={<DirectoryPage />} />
+                  <Route path="identify" element={<IdentifyPage />} />
+                  <Route path="identify/result" element={<IdentifyResultPage />} />
+                  <Route path="plants/:id" element={<PlantDetailPage />} />
+                  <Route path="favorites" element={<FavoritesPage />} />
+                  <Route path="history" element={<HistoryPage />} />
+                  <Route path="admin" element={<AdminPage />} />
+                  <Route path="about" element={<AboutPage />} />
+                  <Route path="login" element={<LoginPage />} />
+                  <Route path="register" element={<RegisterPage />} />
+                  {/* Unknown hash routes → home (never blank / crash) */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </HashRouter>
+          </AppDataProvider>
+        </AuthProvider>
+      </ContentProvider>
     </ThemeProvider>
   )
 }

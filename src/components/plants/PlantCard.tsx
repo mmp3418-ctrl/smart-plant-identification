@@ -21,7 +21,7 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         className,
       )}
     >
-      <Link to={`/plants/${plant.id}`} className="relative block aspect-[4/3] overflow-hidden bg-canvas dark:bg-stone-900">
+      <Link to={`/plants/${plant.id}`} className="relative block aspect-[4/3] overflow-hidden bg-surface">
         <img
           src={plant.imageUrl}
           alt={plant.arabicName}
@@ -37,9 +37,9 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         aria-pressed={favorite}
         className={cn(
           'absolute top-2 start-2 touch-target inline-flex items-center justify-center',
-          'rounded-xl glass-strong text-muted dark:text-stone-300',
-          'transition-all duration-200 hover:text-brand dark:hover:text-emerald-300 hover:scale-105',
-          favorite && 'text-brand dark:text-emerald-300 border-brand/30',
+          'rounded-xl glass-strong text-muted',
+          'transition-all duration-200 hover:text-brand hover:scale-105',
+          favorite && 'text-brand border-brand/30',
         )}
       >
         <Heart
@@ -52,16 +52,16 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         <div>
           <Link
             to={`/plants/${plant.id}`}
-            className="block text-base font-bold text-ink dark:text-stone-100 hover:text-brand dark:hover:text-emerald-300 transition-colors"
+            className="block text-base font-bold text-ink hover:text-brand transition-colors"
           >
             {plant.arabicName}
           </Link>
-          <p className="mt-0.5 text-xs italic font-medium tracking-wide text-muted dark:text-stone-300">
+          <p className="mt-0.5 text-xs italic font-medium tracking-wide text-muted">
             {plant.scientificName}
           </p>
         </div>
 
-        <p className="line-clamp-2 text-sm leading-relaxed text-muted dark:text-stone-300">
+        <p className="line-clamp-2 text-sm leading-relaxed text-muted">
           {plant.description}
         </p>
 

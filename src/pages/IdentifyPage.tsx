@@ -10,9 +10,10 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { Button, Spinner } from '@/components/ui'
-import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
+import { IdentifyLoadingOverlay } from '@/components/system/IdentifyLoadingOverlay'
 import { useCamera } from '@/hooks/useCamera'
 import { useAppData } from '@/context/AppDataContext'
+import { useSiteContent } from '@/context/ContentContext'
 import {
   displayPlantCommonName,
   identifyPlant,
@@ -32,6 +33,8 @@ export function IdentifyPage() {
   const preferUpload = searchParams.get('mode') === 'upload'
   const navigate = useNavigate()
   const { addHistory } = useAppData()
+  const { content } = useSiteContent()
+  const ui = content.identify
   const fileInputRef = useRef<HTMLInputElement>(null)
   const camera = useCamera()
 
@@ -50,31 +53,34 @@ export function IdentifyPage() {
     return () => stop()
   }, [preferUpload, start, stop])
 
-  const setPreviewFromFile = useCallback(async (file: File) => {
-    try {
-      validatePlantImage(file)
-    } catch (error) {
-      setPhase('error')
-      setErrorMessage(
-        isServiceError(error)
-          ? error.message
-          : 'يرجى اختيار ملف صورة صالح (JPEG أو PNG أو WebP، بحد أقصى 5 ميغابايت).',
-      )
-      return
-    }
+  const setPreviewFromFile = useCallback(
+    async (file: File) => {
+      try {
+        validatePlantImage(file)
+      } catch (error) {
+        setPhase('error')
+        setErrorMessage(
+          isServiceError(error)
+            ? error.message
+            : 'يرجى اختيار ملف صورة صالح (JPEG أو PNG أو WebP، بحد أقصى 5 ميغابايت).',
+        )
+        return
+      }
 
-    try {
-      const dataUrl = await fileToDataUrl(file)
-      setPendingFile(file)
-      setPreview(dataUrl)
-      setPhase('preview')
-      setErrorMessage(null)
-      stop()
-    } catch {
-      setPhase('error')
-      setErrorMessage('فشل تحميل الصورة من الجهاز.')
-    }
-  }, [stop])
+      try {
+        const dataUrl = await fileToDataUrl(file)
+        setPendingFile(file)
+        setPreview(dataUrl)
+        setPhase('preview')
+        setErrorMessage(null)
+        stop()
+      } catch {
+        setPhase('error')
+        setErrorMessage('فشل تحميل الصورة من الجهاز.')
+      }
+    },
+    [stop],
+  )
 
   async function analyze() {
     if (!preview) return
@@ -232,40 +238,33 @@ export function IdentifyPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-[#142D21] text-stone-100">
+    <div className="relative flex min-h-dvh flex-col bg-[#070d18] text-slate-100">
       {phase === 'analyzing' ? (
-        <GreenLoadingOverlay
-          message="جارٍ تعريف النبات عبر Pl@ntNet…"
-          zIndexClass="z-[95]"
-        />
+        <IdentifyLoadingOverlay steps={ui.loadingSteps} />
       ) : null}
 
-      {/* Top bar */}
       <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link
           to="/"
-          className="touch-target inline-flex items-center justify-center rounded-md text-emerald-200/80 hover:text-white"
+          className="touch-target inline-flex items-center justify-center rounded-md text-amber-200/80 hover:text-amber-100"
           aria-label="إغلاق والعودة"
         >
           <X className="size-5" />
         </Link>
         <div className="text-center">
-          <p className="text-sm font-bold text-stone-50">تعريف النبات</p>
-          <p className="text-xs text-emerald-200/70">
-            كاميرا أو رفع صورة — ثم معاينة قبل التحليل
-          </p>
+          <p className="text-sm font-bold text-slate-50">{ui.title}</p>
+          <p className="text-xs text-amber-200/70">{ui.subtitle}</p>
         </div>
-        <span className="touch-target inline-flex items-center justify-center text-emerald-200/80">
+        <span className="touch-target inline-flex items-center justify-center text-amber-300/80">
           <Leaf className="size-5" aria-hidden />
         </span>
       </div>
 
-      {/* Viewport */}
       <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-4 pb-6 sm:px-6">
         <div
           className={cn(
-            'relative min-h-[52vh] flex-1 overflow-hidden rounded-2xl bg-black/40 transition-shadow',
-            isDragging && 'ring-2 ring-emerald-300 ring-offset-2 ring-offset-[#142D21]',
+            'relative min-h-[52vh] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_0_40px_-16px_rgba(245,158,11,0.35)] transition-shadow',
+            isDragging && 'ring-2 ring-amber-300 ring-offset-2 ring-offset-[#070d18]',
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -293,19 +292,15 @@ export function IdentifyPage() {
           {!preview && !camera.stream ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
               {camera.starting ? (
-                <Spinner
-                  label="جارٍ تشغيل الكاميرا…"
-                  className="text-emerald-200"
-                />
+                <Spinner label="جارٍ تشغيل الكاميرا…" className="text-amber-200" />
               ) : (
                 <>
                   <ImageIcon
-                    className="size-10 text-emerald-200/70"
+                    className="size-10 text-amber-200/70"
                     strokeWidth={1.25}
                   />
-                  <p className="text-sm text-emerald-100/80">
-                    {camera.error ||
-                      'اسحب صورة هنا أو استخدم زر الرفع / الكاميرا'}
+                  <p className="text-sm text-amber-100/80">
+                    {camera.error || ui.dragHint}
                   </p>
                   <Button
                     variant="secondary"
@@ -320,25 +315,21 @@ export function IdentifyPage() {
             </div>
           ) : null}
 
-          {/* Drag hint overlay */}
           {isDragging ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-emerald-950/70 backdrop-blur-sm">
-              <p className="text-sm font-semibold text-emerald-100">
-                أفلت الصورة هنا للمعاينة
-              </p>
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+              <p className="text-sm font-semibold text-amber-100">{ui.dropHint}</p>
             </div>
           ) : null}
 
-          {/* Scan frame */}
           {phase !== 'analyzing' && !isDragging ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
               <div className="relative aspect-square w-[78%] max-w-[280px]">
-                <span className="absolute start-0 top-0 h-8 w-8 border-s-2 border-t-2 border-emerald-200" />
-                <span className="absolute end-0 top-0 h-8 w-8 border-e-2 border-t-2 border-emerald-200" />
-                <span className="absolute start-0 bottom-0 h-8 w-8 border-s-2 border-b-2 border-emerald-200" />
-                <span className="absolute end-0 bottom-0 h-8 w-8 border-e-2 border-b-2 border-emerald-200" />
+                <span className="absolute start-0 top-0 h-8 w-8 border-s-2 border-t-2 border-amber-300" />
+                <span className="absolute end-0 top-0 h-8 w-8 border-e-2 border-t-2 border-amber-300" />
+                <span className="absolute start-0 bottom-0 h-8 w-8 border-s-2 border-b-2 border-amber-300" />
+                <span className="absolute end-0 bottom-0 h-8 w-8 border-e-2 border-b-2 border-amber-300" />
                 {!preview ? (
-                  <span className="scan-line absolute inset-x-3 h-px bg-emerald-200/80" />
+                  <span className="scan-line absolute inset-x-3 h-px bg-amber-300/80" />
                 ) : null}
               </div>
             </div>
@@ -357,12 +348,11 @@ export function IdentifyPage() {
           </div>
         ) : null}
 
-        {/* Controls */}
         <div className="mt-5 space-y-3">
           {phase === 'preview' && preview ? (
             <>
-              <p className="text-center text-xs text-emerald-100/70">
-                راجع المعاينة ثم اضغط «تحليل الصورة» لإرسالها إلى Pl@ntNet
+              <p className="text-center text-xs text-amber-100/70">
+                {ui.analyzeHint}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <Button
@@ -371,10 +361,10 @@ export function IdentifyPage() {
                   leftIcon={<RefreshCw className="size-4" />}
                   onClick={reset}
                 >
-                  إعادة
+                  {ui.resetButton}
                 </Button>
                 <Button fullWidth onClick={() => void analyze()}>
-                  تحليل الصورة
+                  {ui.analyzeButton}
                 </Button>
               </div>
             </>
@@ -384,7 +374,7 @@ export function IdentifyPage() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-emerald-200/80 hover:text-white"
+                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-amber-200/80 hover:text-white"
                 >
                   <Upload className="size-5" aria-hidden />
                   <span className="text-xs">رفع</span>
@@ -395,34 +385,31 @@ export function IdentifyPage() {
                   onClick={() => void handleCapture()}
                   disabled={!camera.stream}
                   className={cn(
-                    'flex size-[72px] items-center justify-center rounded-full border-[3px] border-emerald-200',
+                    'flex size-[72px] items-center justify-center rounded-full border-[3px] border-amber-300',
                     'bg-white/10 transition-transform active:scale-95',
                     'disabled:opacity-40',
                   )}
                   aria-label="التقاط صورة"
                 >
-                  <span className="size-14 rounded-full bg-emerald-200" />
+                  <span className="size-14 rounded-full bg-gradient-to-br from-amber-300 to-amber-500" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => void start()}
-                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-emerald-200/80 hover:text-white"
+                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-amber-200/80 hover:text-white"
                 >
                   <Camera className="size-5" aria-hidden />
                   <span className="text-xs">كاميرا</span>
                 </button>
               </div>
-              <p className="text-center text-xs text-emerald-100/60">
-                يمكنك أيضاً سحب صورة وإفلاتها داخل الإطار · أفضل النتائج مع
-                إضاءة جيدة وقرب من الورقة
-              </p>
+              <p className="text-center text-xs text-amber-100/60">{ui.tipLine}</p>
             </>
           )}
 
           {phase === 'error' ? (
             <Button variant="secondary" fullWidth onClick={reset}>
-              المحاولة من جديد
+              {ui.retryButton}
             </Button>
           ) : null}
         </div>

@@ -1,11 +1,12 @@
-/** Shared visual system class strings */
+/** Shared visual system class strings — amber glass on slate/navy */
 
-export const glassSurface =
-  'backdrop-blur-md bg-white/70 dark:bg-stone-900/75 border border-white/30 dark:border-stone-700/55 shadow-lg'
+export const glassSurface = 'glass-panel'
 
-export const glassStrong =
-  'backdrop-blur-lg bg-white/80 dark:bg-stone-900/85 border border-white/40 dark:border-stone-600/50 shadow-xl'
+export const glassStrong = 'glass-strong'
 
-export const textTitle = 'text-ink dark:text-stone-100'
-export const textBody = 'text-muted dark:text-stone-300'
-export const textSubtle = 'text-muted dark:text-stone-400'
+export const textTitle = 'text-ink'
+export const textBody = 'text-muted'
+export const textSubtle = 'text-muted/80'
+
+export const accentText = 'text-brand'
+export const accentSoft = 'text-accent'

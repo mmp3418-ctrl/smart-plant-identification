@@ -21,7 +21,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-/** First visit always starts in light mode — never follow system preference. */
+/** Glass product defaults to dark slate/navy; light remains available via toggle. */
 function readStoredTheme(): ThemeMode {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -30,7 +30,7 @@ function readStoredTheme(): ThemeMode {
   } catch {
     /* ignore */
   }
-  return 'light'
+  return 'dark'
 }
 
 function applyThemeClass(theme: ThemeMode) {
@@ -39,7 +39,7 @@ function applyThemeClass(theme: ThemeMode) {
   root.style.colorScheme = theme
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) {
-    meta.setAttribute('content', theme === 'dark' ? '#0F1F17' : '#286B45')
+    meta.setAttribute('content', theme === 'dark' ? '#0b1220' : '#e8eef7')
   }
 }
 

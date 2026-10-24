@@ -3,43 +3,47 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Cairo", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cairo", ui-sans-serif, system-ui, sans-serif;
 
-  --color-brand: #286b45;
-  --color-brand-dark: #142d21;
-  --color-sage: #c5dcc4;
-  --color-canvas: #edf1e8;
-  --color-surface: #ffffff;
-  --color-soil: #f4e4d7;
-  --color-soil-brown: #79533d;
-  --color-ink: #1b211d;
-  --color-muted: #737b73;
-  --color-line: #d5ddd2;
+  /* Dark slate / deep navy + warm amber-gold (glass product palette) */
+  --color-brand: #f59e0b;
+  --color-brand-dark: #d97706;
+  --color-accent: #fbbf24;
+  --color-sage: #cbd5e1;
+  --color-canvas: #0b1220;
+  --color-surface: #121a2b;
+  --color-soil: #1e293b;
+  --color-soil-brown: #fbbf24;
+  --color-ink: #f1f5f9;
+  --color-muted: #94a3b8;
+  --color-line: #243047;
 
-  --color-brand-soft: color-mix(in srgb, #286b45 12%, white);
-  --color-danger: #b42318;
-  --color-danger-soft: #fef3f2;
-  --color-warning: #b54708;
-  --color-warning-soft: #fffaeb;
+  --color-brand-soft: color-mix(in srgb, #f59e0b 18%, #0b1220);
+  --color-danger: #f87171;
+  --color-danger-soft: color-mix(in srgb, #b91c1c 28%, #0b1220);
+  --color-warning: #fbbf24;
+  --color-warning-soft: color-mix(in srgb, #b45309 28%, #0b1220);
 }
 
-/* Dark botanical palette — high-contrast text tokens */
-.dark {
-  --color-brand: #4ade80;
-  --color-brand-dark: #142d21;
-  --color-sage: #c5dcc4;
-  --color-canvas: #0f1f17;
-  --color-surface: #1a382a;
-  --color-soil: #3a2e24;
-  --color-soil-brown: #e7c6a5;
-  --color-ink: #f5f5f4; /* stone-100 */
-  --color-muted: #d6d3d1; /* stone-300 */
-  --color-line: #3f5a4a;
-  --color-brand-soft: color-mix(in srgb, #4ade80 18%, #0f1f17);
-  --color-danger: #fca5a5;
-  --color-danger-soft: color-mix(in srgb, #b42318 32%, #0f1f17);
-  --color-warning: #fcd34d;
-  --color-warning-soft: color-mix(in srgb, #b54708 30%, #0f1f17);
+/* Optional light glass variant (theme toggle) */
+:root:not(.dark) {
+  --color-brand: #b45309;
+  --color-brand-dark: #92400e;
+  --color-accent: #d97706;
+  --color-sage: #64748b;
+  --color-canvas: #e8eef7;
+  --color-surface: #f8fafc;
+  --color-soil: #e2e8f0;
+  --color-soil-brown: #92400e;
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-line: #cbd5e1;
+  --color-brand-soft: color-mix(in srgb, #f59e0b 16%, white);
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
 }
 
 @layer base {
@@ -58,6 +62,11 @@
     margin: 0;
     min-height: 100dvh;
     background-color: var(--color-canvas);
+    background-image:
+      radial-gradient(ellipse 90% 60% at 10% -10%, rgba(245, 158, 11, 0.14), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 95% 10%, rgba(59, 130, 246, 0.12), transparent 50%),
+      radial-gradient(ellipse 50% 40% at 50% 100%, rgba(15, 23, 42, 0.9), transparent 60%);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 1rem;
@@ -67,8 +76,10 @@
     transition: background-color 0.35s ease, color 0.35s ease;
   }
 
-  .dark body {
-    color: #f5f5f4;
+  :root:not(.dark) body {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 0% 0%, rgba(245, 158, 11, 0.12), transparent 50%),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(100, 116, 139, 0.15), transparent 45%);
   }
 
   #root {
@@ -97,7 +108,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 28%, transparent);
+    background: color-mix(in srgb, var(--color-brand) 35%, transparent);
     color: var(--color-ink);
   }
 }
@@ -131,56 +142,68 @@
     text-wrap: balance;
   }
 
-  /* Explicit dark-mode text contrast (never blends into canvas) */
-  .dark .text-ink {
-    color: #f5f5f4 !important;
-  }
-
-  .dark .text-muted {
-    color: #d6d3d1 !important;
-  }
-
-  .dark .placeholder\:text-muted\/80::placeholder {
-    color: rgb(214 211 209 / 0.8) !important;
-  }
-
-  .dark .hover\:text-ink:hover {
-    color: #f5f5f4 !important;
-  }
-
-  .dark .hover\:text-brand-dark:hover {
-    color: #86efac !important;
-  }
-
   .glass-panel {
-    @apply backdrop-blur-md bg-white/70 dark:bg-stone-900/75 border border-white/30 dark:border-stone-700/55 shadow-lg;
+    background: color-mix(in srgb, #121a2b 55%, transparent);
+    backdrop-filter: blur(18px) saturate(1.35);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+    border: 1px solid color-mix(in srgb, white 12%, transparent);
+    box-shadow:
+      0 10px 40px -20px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  }
+
+  :root:not(.dark) .glass-panel {
+    background: color-mix(in srgb, white 72%, transparent);
+    border-color: color-mix(in srgb, white 55%, #94a3b8);
+    box-shadow:
+      0 12px 36px -22px rgba(15, 23, 42, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7);
   }
 
   .glass-strong {
-    @apply backdrop-blur-lg bg-white/80 dark:bg-stone-900/85 border border-white/40 dark:border-stone-600/50 shadow-xl;
+    background: color-mix(in srgb, #0f172a 72%, transparent);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid color-mix(in srgb, #f59e0b 22%, white 10%);
+    box-shadow:
+      0 18px 50px -24px rgba(0, 0, 0, 0.65),
+      0 0 0 1px color-mix(in srgb, white 6%, transparent),
+      inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+  }
+
+  :root:not(.dark) .glass-strong {
+    background: color-mix(in srgb, white 86%, transparent);
+    border-color: color-mix(in srgb, #f59e0b 25%, #cbd5e1);
+  }
+
+  .glass-amber {
+    background: color-mix(in srgb, #f59e0b 12%, #121a2b 55%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid color-mix(in srgb, #fbbf24 35%, transparent);
   }
 
   .hover-lift {
     transition:
-      transform 0.25s ease,
-      border-color 0.25s ease,
-      box-shadow 0.25s ease;
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.28s ease,
+      box-shadow 0.28s ease;
   }
 
   .hover-lift:hover {
-    transform: translateY(-2px) scale(1.01);
-    border-color: color-mix(in srgb, var(--color-brand) 35%, var(--color-line));
-    box-shadow: 0 10px 28px -18px color-mix(in srgb, var(--color-brand-dark) 45%, transparent);
+    transform: translateY(-3px) scale(1.01);
+    border-color: color-mix(in srgb, var(--color-brand) 45%, var(--color-line));
+    box-shadow: 0 16px 40px -20px color-mix(in srgb, #f59e0b 40%, transparent);
   }
 
   .page-enter {
-    animation: page-enter 0.32s ease-out;
+    animation: page-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   @keyframes page-enter {
     from {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(10px);
     }
     to {
       opacity: 1;
@@ -246,8 +269,8 @@
       filter: drop-shadow(0 0 0 transparent);
     }
     50% {
-      transform: scale(1.1);
-      filter: drop-shadow(0 0 22px color-mix(in srgb, #c5dcc4 65%, transparent));
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 24px color-mix(in srgb, #fbbf24 55%, transparent));
     }
   }
 
@@ -277,13 +300,64 @@
     }
   }
 
+  .amber-glow {
+    animation: amber-glow 2.2s ease-in-out infinite;
+  }
+
+  @keyframes amber-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, #f59e0b 0%, transparent);
+      filter: drop-shadow(0 0 8px color-mix(in srgb, #fbbf24 25%, transparent));
+    }
+    50% {
+      box-shadow: 0 0 40px 4px color-mix(in srgb, #f59e0b 28%, transparent);
+      filter: drop-shadow(0 0 22px color-mix(in srgb, #fbbf24 55%, transparent));
+    }
+  }
+
+  .progress-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, #fbbf24 45%, transparent),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: progress-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes progress-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  .step-fade {
+    animation: step-fade 0.45s ease;
+  }
+
+  @keyframes step-fade {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .typewriter-caret {
     display: inline-block;
     width: 2px;
     height: 1.1em;
     margin-inline-start: 2px;
     vertical-align: text-bottom;
-    background: #c5dcc4;
+    background: #fbbf24;
     animation: caret-blink 0.8s step-end infinite;
   }
 
@@ -295,8 +369,8 @@
 
   .title-glow {
     text-shadow:
-      0 0 18px color-mix(in srgb, #c5dcc4 45%, transparent),
-      0 0 40px color-mix(in srgb, #286b45 35%, transparent);
+      0 0 18px color-mix(in srgb, #fbbf24 40%, transparent),
+      0 0 40px color-mix(in srgb, #f59e0b 28%, transparent);
   }
 
   .splash-fade-out {

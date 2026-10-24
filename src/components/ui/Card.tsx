@@ -28,7 +28,7 @@ export function Card({
         'rounded-2xl',
         glass
           ? 'glass-panel'
-          : 'border border-line bg-surface dark:border-stone-700/55 dark:bg-[#1A382A]',
+          : 'border border-line bg-surface',
         hoverable && 'hover-lift cursor-pointer',
         paddingStyles[padding],
         className,
@@ -59,13 +59,9 @@ export function CardHeader({
       {...props}
     >
       <div className="min-w-0">
-        <h3 className="text-base font-bold text-ink dark:text-stone-100 sm:text-lg">
-          {title}
-        </h3>
+        <h3 className="text-base font-bold text-ink sm:text-lg">{title}</h3>
         {description ? (
-          <p className="mt-1 text-sm leading-relaxed text-muted dark:text-stone-300">
-            {description}
-          </p>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
         ) : null}
       </div>
       {action}
@@ -80,10 +76,7 @@ export function CardContent({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        'text-sm leading-relaxed text-muted dark:text-stone-300',
-        className,
-      )}
+      className={cn('text-sm leading-relaxed text-muted', className)}
       {...props}
     >
       {children}

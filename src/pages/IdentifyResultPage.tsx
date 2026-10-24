@@ -10,8 +10,12 @@ import {
   AlertTriangle,
   BookOpen,
   Sprout,
+  Droplet,
+  Scissors,
+  CloudFog,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
+import { PlantHealthSection } from '@/components/identify/PlantHealthSection'
 import {
   confidencePercent,
   displayPlantCommonName,
@@ -62,7 +66,7 @@ export function IdentifyResultPage() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted dark:text-stone-300 hover:text-brand dark:hover:text-emerald-300"
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted hover:text-brand"
           >
             <ArrowRight className="size-4" aria-hidden />
             رجوع
@@ -85,10 +89,8 @@ export function IdentifyResultPage() {
               aria-hidden
             />
             <div>
-              <h1 className="text-lg font-extrabold text-ink dark:text-stone-100">
-                تعذّر التعرف بدقة
-              </h1>
-              <p className="mt-2 text-sm leading-relaxed text-muted dark:text-stone-300">
+              <h1 className="text-lg font-extrabold text-ink">تعذّر التعرف بدقة</h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
                 {message?.trim() || PLANTNET_UNRECOGNIZED_MESSAGE}
               </p>
             </div>
@@ -108,6 +110,7 @@ export function IdentifyResultPage() {
   const top = candidates[0]
   const plant = match?.plant
   const care = primary?.careInfo ?? top.careInfo
+  const health = primary?.health ?? top.health
 
   const confidence =
     primary?.confidence ??
@@ -135,13 +138,16 @@ export function IdentifyResultPage() {
     pickText(primary?.family, top.family, plant?.family) || 'غير محدد'
 
   const wateringValue = pickText(care?.watering, top.watering, plant?.watering)
+  const wateringSchedule = pickText(care?.wateringSchedule, top.wateringSchedule)
   const lightValue = pickText(care?.light, top.light, plant?.sunlight)
   const temperatureValue = pickText(
     care?.temperature,
     top.temperature,
     plant?.temperature_range,
   )
+  const humidityValue = pickText(care?.humidity, top.humidity)
   const soilValue = pickText(care?.soil, top.soil)
+  const propagationValue = pickText(care?.propagation, top.propagation)
   const descriptionValue = pickText(top.description, plant?.description)
   const careGuideValue = pickText(top.careGuide)
 
@@ -151,7 +157,7 @@ export function IdentifyResultPage() {
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted dark:text-stone-300 hover:text-brand dark:hover:text-emerald-300"
+          className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted hover:text-brand"
         >
           <ArrowRight className="size-4" aria-hidden />
           رجوع
@@ -164,7 +170,7 @@ export function IdentifyResultPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Badge variant="brand">تم التعريف عبر Pl@ntNet</Badge>
+        <Badge variant="brand">تم التعريف</Badge>
         <Badge variant="sage">{confidence}% ثقة</Badge>
         {match.matchedBy ? (
           <Badge variant="default">
@@ -187,23 +193,17 @@ export function IdentifyResultPage() {
         </div>
 
         <Card glass padding="lg">
-          <p className="text-sm text-muted dark:text-stone-300">
-            {plant?.category || familyValue}
-          </p>
-          <h1 className="mt-1 text-2xl font-extrabold text-ink dark:text-stone-100 sm:text-3xl">
+          <p className="text-sm text-muted">{plant?.category || familyValue}</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-ink sm:text-3xl">
             {displayArabic}
           </h1>
           {displayScientific ? (
-            <p className="mt-1 text-sm italic text-muted dark:text-stone-300">
-              {displayScientific}
-            </p>
+            <p className="mt-1 text-sm italic text-muted">{displayScientific}</p>
           ) : null}
-          <p className="mt-1 text-xs text-muted dark:text-stone-400">
-            العائلة: {familyValue}
-          </p>
+          <p className="mt-1 text-xs text-muted">العائلة: {familyValue}</p>
 
           {descriptionValue ? (
-            <p className="mt-4 text-sm leading-relaxed text-muted dark:text-stone-300">
+            <p className="mt-4 text-sm leading-relaxed text-muted">
               {descriptionValue}
             </p>
           ) : null}
@@ -214,6 +214,13 @@ export function IdentifyResultPage() {
                 icon={<Droplets className="size-4" />}
                 label="الري"
                 value={wateringValue}
+              />
+            ) : null}
+            {wateringSchedule ? (
+              <MetaTile
+                icon={<Droplet className="size-4" />}
+                label="جدول الري"
+                value={wateringSchedule}
               />
             ) : null}
             {lightValue ? (
@@ -230,11 +237,26 @@ export function IdentifyResultPage() {
                 value={temperatureValue}
               />
             ) : null}
+            {humidityValue ? (
+              <MetaTile
+                icon={<CloudFog className="size-4" />}
+                label="الرطوبة"
+                value={humidityValue}
+              />
+            ) : null}
             {soilValue ? (
               <MetaTile
                 icon={<Sprout className="size-4" />}
                 label="التربة"
                 value={soilValue}
+              />
+            ) : null}
+            {propagationValue ? (
+              <MetaTile
+                icon={<Scissors className="size-4" />}
+                label="الإكثار"
+                value={propagationValue}
+                className="min-[390px]:col-span-2"
               />
             ) : null}
           </div>
@@ -272,9 +294,7 @@ export function IdentifyResultPage() {
             <Card glass padding="lg">
               <CardHeader
                 title="البيئات المناسبة"
-                action={
-                  <MapPin className="size-4 text-brand dark:text-emerald-300" />
-                }
+                action={<MapPin className="size-4 text-brand" />}
               />
               <CardContent>
                 <div className="flex flex-wrap gap-2">
@@ -297,7 +317,7 @@ export function IdentifyResultPage() {
             description={
               match.careGuides.length > 0
                 ? 'من قاعدة البيانات المحلية'
-                : 'مستخلص حسب نوع النبات من نتيجة Pl@ntNet'
+                : 'ملف عناية مُشتق حسب تصنيف النبات'
             }
           />
           <CardContent>
@@ -306,9 +326,9 @@ export function IdentifyResultPage() {
                 {match.careGuides.map((step, index) => (
                   <li
                     key={step.id}
-                    className="flex gap-3 text-sm leading-relaxed text-muted dark:text-stone-300"
+                    className="flex gap-3 text-sm leading-relaxed text-muted"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand dark:text-emerald-300">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-brand-soft text-xs font-bold text-brand">
                       {step.step_order ?? index + 1}
                     </span>
                     <span>{step.instruction_ar}</span>
@@ -316,13 +336,15 @@ export function IdentifyResultPage() {
                 ))}
               </ol>
             ) : (
-              <p className="whitespace-pre-line text-sm leading-relaxed text-muted dark:text-stone-300">
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted">
                 {careGuideValue}
               </p>
             )}
           </CardContent>
         </Card>
       ) : null}
+
+      <PlantHealthSection health={health} />
 
       {plant?.warnings && plant.warnings.length > 0 ? (
         <Card className="mt-4" glass padding="lg">
@@ -349,9 +371,7 @@ export function IdentifyResultPage() {
 
       {candidates.length > 1 ? (
         <section className="mt-8">
-          <h2 className="mb-3 text-base font-bold text-ink dark:text-stone-100">
-            احتمالات أخرى
-          </h2>
+          <h2 className="mb-3 text-base font-bold text-ink">احتمالات أخرى</h2>
           <ul className="space-y-2">
             {candidates.slice(1).map((candidate) => (
               <li
@@ -361,10 +381,10 @@ export function IdentifyResultPage() {
                 )}
               >
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-ink dark:text-stone-100">
+                  <p className="truncate font-semibold text-ink">
                     {displayPlantCommonName(candidate)}
                   </p>
-                  <p className="truncate text-xs italic text-muted dark:text-stone-300">
+                  <p className="truncate text-xs italic text-muted">
                     {candidate.scientificName || '—'}
                   </p>
                 </div>
@@ -386,20 +406,25 @@ function MetaTile({
   icon,
   label,
   value,
+  className,
 }: {
   icon: ReactNode
   label: string
   value: string
+  className?: string
 }) {
   return (
-    <div className="rounded-xl border border-white/20 dark:border-stone-700/55 bg-canvas/60 dark:bg-stone-900/40 px-3 py-3">
-      <div className="flex items-center gap-1.5 text-brand dark:text-emerald-300">
+    <div
+      className={cn(
+        'rounded-xl border border-white/10 bg-slate-950/30 px-3 py-3 transition-colors hover:border-amber-400/30',
+        className,
+      )}
+    >
+      <div className="flex items-center gap-1.5 text-brand">
         {icon}
         <span className="text-xs font-semibold">{label}</span>
       </div>
-      <p className="mt-1 text-sm font-bold leading-snug text-ink dark:text-stone-100">
-        {value}
-      </p>
+      <p className="mt-1 text-sm font-bold leading-snug text-ink">{value}</p>
     </div>
   )
 }

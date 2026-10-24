@@ -1,7 +1,6 @@
 import type {
   IdentifyImageOptions,
   NormalizedPlantMatch,
-  PlantCareInfo,
   PlantIdentificationCandidate,
   PlantIdentificationOutcome,
   PlantIdentificationPrimarySummary,
@@ -11,6 +10,13 @@ import type {
 import { ServiceError } from '@/services/errors'
 import { compressImageForUpload } from '@/services/imageUtils'
 import { extractBinomialScientificName } from '@/lib/scientificName'
+import {
+  buildCareInfo,
+  buildHealthProfile,
+  careInfoToGuide,
+} from '@/services/plantProfile'
+
+export { buildCareInfo, buildHealthProfile } from '@/services/plantProfile'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
@@ -123,129 +129,11 @@ export function summarizePrimaryCandidate(
     light: primary?.light ?? null,
     temperature: primary?.temperature ?? null,
     soil: primary?.soil ?? null,
+    humidity: primary?.humidity ?? null,
+    propagation: primary?.propagation ?? null,
     isPlant: outcome.isPlant,
     message: outcome.message,
   }
-}
-
-// ─── Care guidelines (Arabic, species-aware heuristics) ──────────────────────
-
-function textBlob(...parts: Array<string | null | undefined>): string {
-  return parts.filter(Boolean).join(' ').toLowerCase()
-}
-
-/**
- * Build structured Arabic care tips from taxonomy signals.
- * Pl@ntNet does not return care fields — this derives practical defaults
- * from family / genus / scientific name, never invents a fake species identity.
- */
-export function buildCareInfo(params: {
-  scientificName: string
-  family: string
-  genus?: string | null
-}): PlantCareInfo {
-  const blob = textBlob(params.scientificName, params.family, params.genus)
-
-  const isCactusOrSucculent =
-    /cact|succul|aloe|agave|crassul|euphorbi|sedum|echeveria|haworth|kalancho|sansevier|dracaena|opuntia|mammillaria|lithops/.test(
-      blob,
-    )
-  const isFern =
-    /fern|polypodi|adiantum|nephrolepis|pterid|asplenium|dryopter/.test(blob)
-  const isOrchid = /orchid|phalaenopsis|dendrobium|cattleya|vanda/.test(blob)
-  const isPalm = /palm|arecaceae|phoenix|chamaedorea|washingtonia|cocos/.test(
-    blob,
-  )
-  const isAquatic =
-    /nymphaea|lemna|pistia|water|aquatic|hydrocharit|potamogeton/.test(blob)
-  const isHerb =
-    /lamiaceae|mentha|ocimum|rosmarinus|thymus|origanum|petroselin|coriandrum/.test(
-      blob,
-    )
-  const isTropical =
-    /musa|monstera|philodendron|calathea|maranta|alocasia|colocasia|ficus|hibiscus/.test(
-      blob,
-    )
-
-  if (isCactusOrSucculent) {
-    return {
-      watering: 'ري متباعد؛ اترك التربة تجف تماماً بين الريات وتجنب تجمع الماء.',
-      light: 'ضوء ساطع مباشر إلى شمس كاملة معظم اليوم.',
-      temperature: '١٨–٣٢°م مع حماية من الصقيع.',
-      soil: 'تربة رملية خفيفة وسريعة التصريف مخصصة للصبار والعصاريات.',
-    }
-  }
-
-  if (isFern) {
-    return {
-      watering: 'حافظ على رطوبة التربة دون إغراق؛ رش الأوراق لرفع الرطوبة.',
-      light: 'ظل جزئي أو إضاءة ساطعة غير مباشرة — تجنّب الشمس الحارقة.',
-      temperature: '١٦–٢٤°م مع رطوبة مرتفعة.',
-      soil: 'تربة عضوية غنية جيدة الاحتفاظ بالرطوبة مع تصريف معتدل.',
-    }
-  }
-
-  if (isOrchid) {
-    return {
-      watering: 'ري معتدل عند جفاف الوسط؛ لا تترك الجذور في ماء راكد.',
-      light: 'إضاءة ساطعة غير مباشرة؛ تجنّب أشعة الظهيرة المباشرة.',
-      temperature: '١٨–٢٨°م مع فرق طفيف بين الليل والنهار.',
-      soil: 'وسط بساتين (لحاء / ألياف) جيد التهوية وسريع التصريف.',
-    }
-  }
-
-  if (isPalm) {
-    return {
-      watering: 'ري منتظم مع السماح بسطح التربة بالجفاف قليلاً بين الريات.',
-      light: 'شمس معتدلة إلى إضاءة ساطعة؛ بعض الأنواع تتحمل الظل الجزئي.',
-      temperature: '١٨–٣٠°م بعيداً عن تيارات الهواء الباردة.',
-      soil: 'تربة طميية جيدة التصريف غنية بالمواد العضوية.',
-    }
-  }
-
-  if (isAquatic) {
-    return {
-      watering: 'يحتاج بيئة مائية دائمة أو تربة مشبعة حسب النوع.',
-      light: 'شمس كاملة إلى جزئية بحسب نوع النبات المائي.',
-      temperature: '١٨–٢٨°م في مياه نظيفة جيدة التهوية.',
-      soil: 'وسط مائي أو طين مائي مخصص للنباتات المائية.',
-    }
-  }
-
-  if (isHerb) {
-    return {
-      watering: 'ري منتظم عند جفاف السطح؛ تجنّب الإفراط ليبقى الطعم مركزاً.',
-      light: 'شمس كاملة ٦ ساعات يومياً على الأقل.',
-      temperature: '١٥–٢٨°م في مكان جيد التهوية.',
-      soil: 'تربة خفيفة خصبة جيدة التصريف.',
-    }
-  }
-
-  if (isTropical) {
-    return {
-      watering: 'ري معتدل عند جفاف السطح؛ حافظ على رطوبة جوية معتدلة.',
-      light: 'إضاءة ساطعة غير مباشرة؛ تجنّب الحرق من الشمس المباشرة.',
-      temperature: '١٨–٢٩°م بعيداً عن البرودة المفاجئة.',
-      soil: 'تربة غنية جيدة التصريف مع مادة عضوية.',
-    }
-  }
-
-  // General healthy houseplant / outdoor default
-  return {
-    watering: 'ري معتدل عند جفاف الطبقة السطحية من التربة؛ تجنّب الإفراط.',
-    light: 'إضاءة ساطعة غير مباشرة إلى شمس معتدلة حسب تحمّل النوع.',
-    temperature: '١٦–٢٨°م في بيئة مستقرة بعيداً عن التيارات القاسية.',
-    soil: 'تربة زراعية جيدة التصريف غنية بالمواد العضوية.',
-  }
-}
-
-function careInfoToGuide(care: PlantCareInfo): string {
-  return [
-    `الري: ${care.watering}`,
-    `الإضاءة: ${care.light}`,
-    `درجة الحرارة: ${care.temperature}`,
-    `التربة: ${care.soil}`,
-  ].join('\n')
 }
 
 // ─── Response mapping ────────────────────────────────────────────────────────
@@ -306,11 +194,13 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
       : 0
   const confidence = Math.round(score * 100)
 
-  const careInfo = buildCareInfo({
+  const profileParams = {
     scientificName: resolvedScientific,
     family,
     genus,
-  })
+  }
+  const careInfo = buildCareInfo(profileParams)
+  const health = buildHealthProfile(profileParams)
 
   return {
     name: commonName,
@@ -324,14 +214,18 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
     score,
     confidencePercent: confidence,
     taxonId: null,
-    description: `نبات من عائلة ${family}. راجع إرشادات العناية أدناه.`,
+    description: `نبات من عائلة ${family}. راجع إرشادات العناية وملف الصحة والأمراض أدناه.`,
     watering: careInfo.watering,
+    wateringSchedule: careInfo.wateringSchedule,
     light: careInfo.light,
     temperature: careInfo.temperature,
+    humidity: careInfo.humidity,
     soil: careInfo.soil,
+    propagation: careInfo.propagation,
     environment: null,
     careGuide: careInfoToGuide(careInfo),
     careInfo,
+    health,
     healthStatus: `${confidence}%`,
     detailUrl: null,
   }
@@ -346,6 +240,7 @@ function toNormalizedMatch(
     confidence: candidate.confidencePercent,
     family: candidate.family || 'غير محدد',
     careInfo: candidate.careInfo,
+    health: candidate.health,
   }
 }
 

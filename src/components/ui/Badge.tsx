@@ -9,16 +9,16 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const variantStyles: Record<BadgeVariant, string> = {
   default:
-    'bg-canvas text-muted border-line dark:bg-stone-800 dark:text-stone-300 dark:border-stone-600',
+    'bg-white/5 text-muted border-white/10',
   brand:
-    'bg-brand-soft text-brand border-transparent dark:text-emerald-300',
-  soil: 'bg-soil text-soil-brown border-transparent dark:text-[#e7c6a5]',
+    'bg-brand-soft text-amber-300 border-amber-400/25',
+  soil: 'bg-soil text-amber-200 border-white/10',
   sage:
-    'bg-sage/70 text-brand-dark border-transparent dark:bg-emerald-900/60 dark:text-emerald-200',
+    'bg-slate-700/50 text-slate-200 border-white/10',
   warning:
-    'bg-warning-soft text-warning border-transparent dark:text-amber-300',
+    'bg-warning-soft text-warning border-amber-400/30',
   danger:
-    'bg-danger-soft text-danger border-transparent dark:text-red-300',
+    'bg-danger-soft text-danger border-red-400/30',
 }
 
 export function Badge({
@@ -30,7 +30,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 border px-2 py-0.5 text-xs font-medium rounded',
+        'inline-flex items-center gap-1 border px-2.5 py-0.5 text-xs font-medium rounded-full',
         variantStyles[variant],
         className,
       )}
