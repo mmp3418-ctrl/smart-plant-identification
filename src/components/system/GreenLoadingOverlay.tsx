@@ -1,15 +1,11 @@
 import { cn } from '@/lib/cn'
 
 export interface GreenLoadingOverlayProps {
-  /** When true, plays fade-out then parent should unmount */
   exiting?: boolean
-  /** Optional branding / status line under the leaf */
   message?: string
-  /** Show typewriter-style title (splash) */
   title?: string
   typedTitle?: string
   typeDone?: boolean
-  /** Block pointer events (full-screen blocker) */
   blocking?: boolean
   className?: string
   zIndexClass?: string
@@ -35,7 +31,7 @@ export function GreenLoadingOverlay({
     <div
       className={cn(
         'fixed inset-0 flex flex-col items-center justify-center',
-        'bg-[#070d18] text-slate-100',
+        'bg-[#142D21] text-stone-100',
         blocking ? 'pointer-events-auto' : 'pointer-events-none',
         exiting ? 'splash-fade-out' : 'loader-fade-in',
         zIndexClass,
@@ -50,7 +46,7 @@ export function GreenLoadingOverlay({
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse at 50% 40%, rgba(245,158,11,0.22), transparent 55%), radial-gradient(ellipse at 80% 80%, rgba(59,130,246,0.1), transparent 40%)',
+            'radial-gradient(ellipse at 50% 40%, rgba(16,185,129,0.22), transparent 55%), radial-gradient(ellipse at 80% 80%, rgba(197,220,196,0.08), transparent 40%)',
         }}
         aria-hidden
       />
@@ -59,7 +55,7 @@ export function GreenLoadingOverlay({
         <div className="leaf-grow mb-7">
           <svg
             viewBox="0 0 96 96"
-            className="size-24 sm:size-28 text-amber-300"
+            className="size-24 text-emerald-200 sm:size-28"
             fill="none"
             aria-hidden
           >
@@ -67,19 +63,19 @@ export function GreenLoadingOverlay({
               cx="48"
               cy="48"
               r="42"
-              className="stroke-amber-400/25"
+              className="stroke-emerald-400/25"
               strokeWidth="1.5"
             />
             <path
               d="M48 16c-3.2 9.5-3.2 17.5 0 25.5 4-8 12-13 21-14.5-8.5 2.2-14 8.5-15.5 17 8.5-1.2 16.5 1.2 22.5 7.5-9.5-2.2-16.5.5-21 7.5 0 7.5-1.4 13.5-5.2 17.5-3.8-4-5.2-10-5.2-17.5-4.5-7-11.5-9.7-21-7.5 6-6.3 14-8.7 22.5-7.5-1.5-8.5-7-14.8-15.5-17 9 1.5 17 6.5 21 14.5C51.2 33.5 51.2 25.5 48 16z"
-              className="leaf-draw fill-none stroke-amber-300"
+              className="leaf-draw fill-none stroke-emerald-200"
               strokeWidth="2.4"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
             <path
               d="M48 42v26"
-              className="leaf-draw stroke-amber-100/90"
+              className="leaf-draw stroke-emerald-100/90"
               strokeWidth="2"
               strokeLinecap="round"
               style={{ animationDelay: '0.3s' }}
@@ -87,7 +83,7 @@ export function GreenLoadingOverlay({
           </svg>
         </div>
 
-        <p className="mb-2 text-sm font-semibold tracking-wide text-amber-200/90">
+        <p className="mb-2 text-sm font-semibold tracking-wide text-emerald-200/90">
           نبْتة
         </p>
 
@@ -107,7 +103,7 @@ export function GreenLoadingOverlay({
 
         <p
           className={cn(
-            'mt-4 text-sm text-amber-100/75 transition-opacity duration-500',
+            'mt-4 text-sm text-emerald-100/75 transition-opacity duration-500',
             exiting && 'opacity-0',
           )}
         >

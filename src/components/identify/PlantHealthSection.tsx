@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle, ShieldCheck, Stethoscope, Syringe } from 'lucide-react'
+import { motion } from 'framer-motion'
+import {
+  AlertTriangle,
+  FlaskConical,
+  Leaf,
+  ShieldCheck,
+  Stethoscope,
+} from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader } from '@/components/ui'
 import type { PlantHealthProfile } from '@/types/identification'
+import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
 const severityLabel: Record<
@@ -17,9 +25,9 @@ const severityClass: Record<
   PlantHealthProfile['diseases'][number]['severity'],
   string
 > = {
-  low: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/25',
-  medium: 'bg-amber-500/15 text-amber-300 border-amber-400/30',
-  high: 'bg-red-500/15 text-red-300 border-red-400/30',
+  low: 'bg-brand-soft text-brand border-brand/20',
+  medium: 'bg-warning-soft text-warning border-warning/25',
+  high: 'bg-danger-soft text-danger border-danger/25',
 }
 
 export function PlantHealthSection({
@@ -30,34 +38,34 @@ export function PlantHealthSection({
   if (!health?.diseases?.length) return null
 
   return (
-    <Card className="mt-4" glass padding="lg">
+    <Card className="mt-4 glow-border" glass padding="lg">
       <CardHeader
-        title="صحة النبات والأمراض"
+        title="الأمراض ومكافحة الآفات"
         description={health.summary}
-        action={
-          <Stethoscope className="size-5 text-brand" aria-hidden />
-        }
+        action={<Stethoscope className="size-5 text-brand" aria-hidden />}
       />
       <CardContent>
-        <div className="space-y-4">
+        <motion.div
+          className="space-y-4"
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.15 }}
+        >
           {health.diseases.map((disease) => (
-            <article
+            <motion.article
               key={disease.id}
-              className="rounded-2xl border border-white/10 bg-slate-950/25 p-4 transition-colors hover:border-amber-400/25"
+              variants={fadeUp}
+              className="rounded-2xl border border-line/80 bg-canvas/50 p-4 transition-shadow hover:shadow-md dark:bg-brand-dark/30"
             >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-bold text-ink">{disease.name}</h4>
-                <Badge
-                  className={cn(
-                    'border',
-                    severityClass[disease.severity],
-                  )}
-                >
+                <Badge className={cn('border', severityClass[disease.severity])}>
                   خطورة {severityLabel[disease.severity]}
                 </Badge>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <HealthFact
                   icon={<AlertTriangle className="size-3.5" />}
                   label="الأعراض"
@@ -69,14 +77,19 @@ export function PlantHealthSection({
                   value={disease.prevention}
                 />
                 <HealthFact
-                  icon={<Syringe className="size-3.5" />}
-                  label="العلاج"
-                  value={disease.treatment}
+                  icon={<Leaf className="size-3.5" />}
+                  label="علاج عضوي"
+                  value={disease.organicTreatment}
+                />
+                <HealthFact
+                  icon={<FlaskConical className="size-3.5" />}
+                  label="علاج كيميائي"
+                  value={disease.chemicalTreatment}
                 />
               </div>
-            </article>
+            </motion.article>
           ))}
-        </div>
+        </motion.div>
       </CardContent>
     </Card>
   )
@@ -92,7 +105,7 @@ function HealthFact({
   value: string
 }) {
   return (
-    <div className="rounded-xl bg-white/5 px-3 py-2.5">
+    <div className="rounded-xl border border-white/40 bg-surface/70 px-3 py-2.5 dark:border-white/10 dark:bg-brand-dark/40">
       <div className="mb-1 flex items-center gap-1.5 text-brand">
         {icon}
         <span className="text-[11px] font-semibold">{label}</span>

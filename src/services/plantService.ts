@@ -13,10 +13,15 @@ import { extractBinomialScientificName } from '@/lib/scientificName'
 import {
   buildCareInfo,
   buildHealthProfile,
+  buildOverviewDescription,
   careInfoToGuide,
 } from '@/services/plantProfile'
 
-export { buildCareInfo, buildHealthProfile } from '@/services/plantProfile'
+export {
+  buildCareInfo,
+  buildHealthProfile,
+  buildOverviewDescription,
+} from '@/services/plantProfile'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
@@ -129,8 +134,9 @@ export function summarizePrimaryCandidate(
     light: primary?.light ?? null,
     temperature: primary?.temperature ?? null,
     soil: primary?.soil ?? null,
-    humidity: primary?.humidity ?? null,
-    propagation: primary?.propagation ?? null,
+    humidity: primary?.humidity ?? primary?.careInfo?.humidity ?? null,
+    propagation: primary?.propagation ?? primary?.careInfo?.propagation ?? null,
+    fertilizer: primary?.fertilizer ?? primary?.careInfo?.fertilizer ?? null,
     isPlant: outcome.isPlant,
     message: outcome.message,
   }
@@ -201,6 +207,12 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
   }
   const careInfo = buildCareInfo(profileParams)
   const health = buildHealthProfile(profileParams)
+  const overview = buildOverviewDescription({
+    commonName,
+    scientificName: resolvedScientific,
+    family,
+    care: careInfo,
+  })
 
   return {
     name: commonName,
@@ -214,13 +226,16 @@ function mapResultToCandidate(result: PlantNetResult): PlantIdentificationCandid
     score,
     confidencePercent: confidence,
     taxonId: null,
-    description: `نبات من عائلة ${family}. راجع إرشادات العناية وملف الصحة والأمراض أدناه.`,
+    description: overview,
+    overview,
     watering: careInfo.watering,
     wateringSchedule: careInfo.wateringSchedule,
+    moistureNeeds: careInfo.moistureNeeds,
     light: careInfo.light,
     temperature: careInfo.temperature,
     humidity: careInfo.humidity,
     soil: careInfo.soil,
+    fertilizer: careInfo.fertilizer,
     propagation: careInfo.propagation,
     environment: null,
     careGuide: careInfoToGuide(careInfo),

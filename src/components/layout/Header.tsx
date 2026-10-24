@@ -72,7 +72,7 @@ export function Header() {
           className="flex min-h-11 items-center gap-2.5 shrink-0 transition-transform duration-200 hover:scale-[1.02]"
           onClick={() => setMobileOpen(false)}
         >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-[0_8px_20px_-8px_rgba(245,158,11,0.7)]">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-white shadow-sm transition-transform duration-200 hover:scale-105">
             <Leaf className="size-4" strokeWidth={2.25} aria-hidden />
           </span>
           <span className="hidden sm:flex flex-col leading-none">
@@ -116,7 +116,7 @@ export function Header() {
                 aria-expanded={profileOpen}
                 aria-haspopup="menu"
               >
-                <span className="flex size-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+                <span className="flex size-8 items-center justify-center rounded-xl bg-sage text-brand-dark dark:bg-emerald-900 dark:text-emerald-200">
                   <User className="size-4" aria-hidden />
                 </span>
                 <span className="max-w-[100px] truncate font-medium text-ink">

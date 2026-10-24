@@ -13,7 +13,7 @@ export function Footer() {
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr]">
           <div>
             <div className="mb-3 flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-md">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-brand text-white">
                 <Leaf className="size-4" aria-hidden />
               </span>
               <span className="font-bold text-ink">{footer.brandName}</span>

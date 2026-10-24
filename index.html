@@ -8,7 +8,7 @@
       name="description"
       content="نبْتة — نظام ذكي لتعريف النباتات وتقييم ملاءمتها البيئية. مشروع تخرج جامعي."
     />
-    <meta name="theme-color" content="#0b1220" />
+    <meta name="theme-color" content="#286B45" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -19,14 +19,14 @@
     <script>
       (function () {
         try {
-          /* Default dark glass product theme; light only when user chose it */
+          /* Default light botanical; dark only when user explicitly chose it */
           var stored = localStorage.getItem('spi.theme');
-          if (stored === 'light') {
-            document.documentElement.classList.remove('dark');
-            document.documentElement.style.colorScheme = 'light';
-          } else {
+          if (stored === 'dark') {
             document.documentElement.classList.add('dark');
             document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
           }
         } catch (e) {}
 

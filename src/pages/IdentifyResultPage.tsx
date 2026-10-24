@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   ArrowRight,
   Camera,
@@ -13,6 +14,8 @@ import {
   Droplet,
   Scissors,
   CloudFog,
+  FlaskConical,
+  FileText,
 } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader } from '@/components/ui'
 import { PlantHealthSection } from '@/components/identify/PlantHealthSection'
@@ -22,6 +25,7 @@ import {
   PLANTNET_UNRECOGNIZED_MESSAGE,
 } from '@/services/plantService'
 import type { IdentifySessionResult } from '@/types/identifySession'
+import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
 function isIdentifySessionResult(value: unknown): value is IdentifySessionResult {
@@ -62,32 +66,9 @@ export function IdentifyResultPage() {
   if (!isPlant || !candidates?.[0]) {
     return (
       <div className="container-app py-6 sm:py-8 lg:py-10">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted hover:text-brand"
-          >
-            <ArrowRight className="size-4" aria-hidden />
-            رجوع
-          </button>
-          <Link to="/identify">
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<Camera className="size-4" />}
-            >
-              تعريف جديد
-            </Button>
-          </Link>
-        </div>
-
         <Card glass padding="lg">
           <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/50 px-4 py-4">
-            <AlertTriangle
-              className="mt-0.5 size-5 shrink-0 text-warning"
-              aria-hidden
-            />
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" />
             <div>
               <h1 className="text-lg font-extrabold text-ink">تعذّر التعرف بدقة</h1>
               <p className="mt-2 text-sm leading-relaxed text-muted">
@@ -137,8 +118,15 @@ export function IdentifyResultPage() {
   const familyValue =
     pickText(primary?.family, top.family, plant?.family) || 'غير محدد'
 
+  const overviewValue = pickText(
+    care?.overview,
+    top.overview,
+    top.description,
+    plant?.description,
+  )
   const wateringValue = pickText(care?.watering, top.watering, plant?.watering)
   const wateringSchedule = pickText(care?.wateringSchedule, top.wateringSchedule)
+  const moistureValue = pickText(care?.moistureNeeds, top.moistureNeeds)
   const lightValue = pickText(care?.light, top.light, plant?.sunlight)
   const temperatureValue = pickText(
     care?.temperature,
@@ -147,13 +135,21 @@ export function IdentifyResultPage() {
   )
   const humidityValue = pickText(care?.humidity, top.humidity)
   const soilValue = pickText(care?.soil, top.soil)
+  const fertilizerValue = pickText(care?.fertilizer, top.fertilizer)
   const propagationValue = pickText(care?.propagation, top.propagation)
-  const descriptionValue = pickText(top.description, plant?.description)
   const careGuideValue = pickText(top.careGuide)
 
   return (
-    <div className="container-app py-6 sm:py-8 lg:py-10">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <motion.div
+      className="container-app py-6 sm:py-8 lg:py-10"
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div
+        className="mb-5 flex flex-wrap items-center justify-between gap-3"
+        variants={fadeUp}
+      >
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -167,9 +163,9 @@ export function IdentifyResultPage() {
             تعريف جديد
           </Button>
         </Link>
-      </div>
+      </motion.div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <motion.div className="mb-4 flex flex-wrap items-center gap-2" variants={fadeUp}>
         <Badge variant="brand">تم التعريف</Badge>
         <Badge variant="sage">{confidence}% ثقة</Badge>
         {match.matchedBy ? (
@@ -181,96 +177,87 @@ export function IdentifyResultPage() {
         ) : (
           <Badge variant="warning">لا توجد بيانات محلية مطابقة</Badge>
         )}
-      </div>
+      </motion.div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-        <div className="overflow-hidden rounded-2xl glass-panel">
+        <motion.div
+          className="overflow-hidden rounded-2xl glass-panel glow-border"
+          variants={fadeUp}
+        >
           <img
             src={previewUrl}
             alt="الصورة المُحلَّلة"
             className="aspect-[4/3] w-full object-cover"
           />
-        </div>
+        </motion.div>
 
-        <Card glass padding="lg">
-          <p className="text-sm text-muted">{plant?.category || familyValue}</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-ink sm:text-3xl">
-            {displayArabic}
-          </h1>
-          {displayScientific ? (
-            <p className="mt-1 text-sm italic text-muted">{displayScientific}</p>
-          ) : null}
-          <p className="mt-1 text-xs text-muted">العائلة: {familyValue}</p>
+        <motion.div variants={fadeUp}>
+          <Card glass padding="lg" className="glow-border">
+            <p className="text-sm text-muted">{plant?.category || familyValue}</p>
+            <h1 className="mt-1 text-2xl font-extrabold text-ink sm:text-3xl">
+              {displayArabic}
+            </h1>
+            {displayScientific ? (
+              <p className="mt-1 text-sm italic text-muted">{displayScientific}</p>
+            ) : null}
+            <p className="mt-1 text-xs text-muted">العائلة: {familyValue}</p>
 
-          {descriptionValue ? (
-            <p className="mt-4 text-sm leading-relaxed text-muted">
-              {descriptionValue}
-            </p>
-          ) : null}
+            {overviewValue ? (
+              <div className="mt-4 rounded-xl border border-line/70 bg-canvas/60 px-3 py-3 dark:bg-brand-dark/30">
+                <div className="mb-1 flex items-center gap-1.5 text-brand">
+                  <FileText className="size-3.5" />
+                  <span className="text-xs font-semibold">نظرة عامة</span>
+                </div>
+                <p className="text-sm leading-relaxed text-muted">{overviewValue}</p>
+              </div>
+            ) : null}
 
-          <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
-            {wateringValue ? (
-              <MetaTile
-                icon={<Droplets className="size-4" />}
-                label="الري"
-                value={wateringValue}
-              />
-            ) : null}
-            {wateringSchedule ? (
-              <MetaTile
-                icon={<Droplet className="size-4" />}
-                label="جدول الري"
-                value={wateringSchedule}
-              />
-            ) : null}
-            {lightValue ? (
-              <MetaTile
-                icon={<Sun className="size-4" />}
-                label="الإضاءة"
-                value={lightValue}
-              />
-            ) : null}
-            {temperatureValue ? (
-              <MetaTile
-                icon={<Thermometer className="size-4" />}
-                label="درجة الحرارة"
-                value={temperatureValue}
-              />
-            ) : null}
-            {humidityValue ? (
-              <MetaTile
-                icon={<CloudFog className="size-4" />}
-                label="الرطوبة"
-                value={humidityValue}
-              />
-            ) : null}
-            {soilValue ? (
-              <MetaTile
-                icon={<Sprout className="size-4" />}
-                label="التربة"
-                value={soilValue}
-              />
-            ) : null}
-            {propagationValue ? (
-              <MetaTile
-                icon={<Scissors className="size-4" />}
-                label="الإكثار"
-                value={propagationValue}
-                className="min-[390px]:col-span-2"
-              />
-            ) : null}
-          </div>
-
-          {plant ? (
-            <div className="mt-5">
-              <Link to={`/plants/${plant.id}`}>
-                <Button fullWidth leftIcon={<BookOpen className="size-4" />}>
-                  عرض الصفحة الكاملة في الدليل
-                </Button>
-              </Link>
+            <div className="mt-5 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+              {wateringValue ? (
+                <MetaTile icon={<Droplets className="size-4" />} label="الري" value={wateringValue} />
+              ) : null}
+              {wateringSchedule ? (
+                <MetaTile icon={<Droplet className="size-4" />} label="جدول الري" value={wateringSchedule} />
+              ) : null}
+              {moistureValue ? (
+                <MetaTile icon={<CloudFog className="size-4" />} label="احتياج الرطوبة" value={moistureValue} />
+              ) : null}
+              {lightValue ? (
+                <MetaTile icon={<Sun className="size-4" />} label="الإضاءة" value={lightValue} />
+              ) : null}
+              {temperatureValue ? (
+                <MetaTile icon={<Thermometer className="size-4" />} label="درجة الحرارة" value={temperatureValue} />
+              ) : null}
+              {humidityValue ? (
+                <MetaTile icon={<CloudFog className="size-4" />} label="رطوبة الهواء" value={humidityValue} />
+              ) : null}
+              {soilValue ? (
+                <MetaTile icon={<Sprout className="size-4" />} label="التربة" value={soilValue} />
+              ) : null}
+              {fertilizerValue ? (
+                <MetaTile icon={<FlaskConical className="size-4" />} label="التسميد" value={fertilizerValue} />
+              ) : null}
+              {propagationValue ? (
+                <MetaTile
+                  icon={<Scissors className="size-4" />}
+                  label="الإكثار"
+                  value={propagationValue}
+                  className="min-[390px]:col-span-2"
+                />
+              ) : null}
             </div>
-          ) : null}
-        </Card>
+
+            {plant ? (
+              <div className="mt-5">
+                <Link to={`/plants/${plant.id}`}>
+                  <Button fullWidth leftIcon={<BookOpen className="size-4" />}>
+                    عرض الصفحة الكاملة في الدليل
+                  </Button>
+                </Link>
+              </div>
+            ) : null}
+          </Card>
+        </motion.div>
       </div>
 
       {(match.soilTypes.length > 0 || match.environments.length > 0) && (
@@ -350,9 +337,7 @@ export function IdentifyResultPage() {
         <Card className="mt-4" glass padding="lg">
           <CardHeader
             title="تحذيرات"
-            action={
-              <AlertTriangle className="size-4 text-warning" aria-hidden />
-            }
+            action={<AlertTriangle className="size-4 text-warning" aria-hidden />}
           />
           <CardContent>
             <ul className="space-y-2">
@@ -377,7 +362,7 @@ export function IdentifyResultPage() {
               <li
                 key={`${candidate.scientificName}-${candidate.score}`}
                 className={cn(
-                  'flex items-center justify-between gap-3 rounded-xl glass-panel px-4 py-3',
+                  'flex items-center justify-between gap-3 rounded-xl glass-panel hover-lift px-4 py-3',
                 )}
               >
                 <div className="min-w-0">
@@ -398,7 +383,7 @@ export function IdentifyResultPage() {
           </ul>
         </section>
       ) : null}
-    </div>
+    </motion.div>
   )
 }
 
@@ -416,7 +401,7 @@ function MetaTile({
   return (
     <div
       className={cn(
-        'rounded-xl border border-white/10 bg-slate-950/30 px-3 py-3 transition-colors hover:border-amber-400/30',
+        'rounded-xl border border-line/70 bg-canvas/50 px-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/35 dark:bg-brand-dark/30',
         className,
       )}
     >

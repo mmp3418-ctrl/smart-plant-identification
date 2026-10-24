@@ -238,7 +238,7 @@ export function IdentifyPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-[#070d18] text-slate-100">
+    <div className="relative flex min-h-dvh flex-col bg-[#142D21] text-slate-100">
       {phase === 'analyzing' ? (
         <IdentifyLoadingOverlay steps={ui.loadingSteps} />
       ) : null}
@@ -246,16 +246,16 @@ export function IdentifyPage() {
       <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link
           to="/"
-          className="touch-target inline-flex items-center justify-center rounded-md text-amber-200/80 hover:text-amber-100"
+          className="touch-target inline-flex items-center justify-center rounded-md text-emerald-200/80 hover:text-emerald-100"
           aria-label="إغلاق والعودة"
         >
           <X className="size-5" />
         </Link>
         <div className="text-center">
           <p className="text-sm font-bold text-slate-50">{ui.title}</p>
-          <p className="text-xs text-amber-200/70">{ui.subtitle}</p>
+          <p className="text-xs text-emerald-200/70">{ui.subtitle}</p>
         </div>
-        <span className="touch-target inline-flex items-center justify-center text-amber-300/80">
+        <span className="touch-target inline-flex items-center justify-center text-emerald-300/80">
           <Leaf className="size-5" aria-hidden />
         </span>
       </div>
@@ -264,7 +264,7 @@ export function IdentifyPage() {
         <div
           className={cn(
             'relative min-h-[52vh] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_0_40px_-16px_rgba(245,158,11,0.35)] transition-shadow',
-            isDragging && 'ring-2 ring-amber-300 ring-offset-2 ring-offset-[#070d18]',
+            isDragging && 'ring-2 ring-emerald-300 ring-offset-2 ring-offset-[#142D21]',
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -292,14 +292,14 @@ export function IdentifyPage() {
           {!preview && !camera.stream ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
               {camera.starting ? (
-                <Spinner label="جارٍ تشغيل الكاميرا…" className="text-amber-200" />
+                <Spinner label="جارٍ تشغيل الكاميرا…" className="text-emerald-200" />
               ) : (
                 <>
                   <ImageIcon
-                    className="size-10 text-amber-200/70"
+                    className="size-10 text-emerald-200/70"
                     strokeWidth={1.25}
                   />
-                  <p className="text-sm text-amber-100/80">
+                  <p className="text-sm text-emerald-100/80">
                     {camera.error || ui.dragHint}
                   </p>
                   <Button
@@ -317,19 +317,19 @@ export function IdentifyPage() {
 
           {isDragging ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
-              <p className="text-sm font-semibold text-amber-100">{ui.dropHint}</p>
+              <p className="text-sm font-semibold text-emerald-100">{ui.dropHint}</p>
             </div>
           ) : null}
 
           {phase !== 'analyzing' && !isDragging ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
               <div className="relative aspect-square w-[78%] max-w-[280px]">
-                <span className="absolute start-0 top-0 h-8 w-8 border-s-2 border-t-2 border-amber-300" />
-                <span className="absolute end-0 top-0 h-8 w-8 border-e-2 border-t-2 border-amber-300" />
-                <span className="absolute start-0 bottom-0 h-8 w-8 border-s-2 border-b-2 border-amber-300" />
-                <span className="absolute end-0 bottom-0 h-8 w-8 border-e-2 border-b-2 border-amber-300" />
+                <span className="absolute start-0 top-0 h-8 w-8 border-s-2 border-t-2 border-emerald-300" />
+                <span className="absolute end-0 top-0 h-8 w-8 border-e-2 border-t-2 border-emerald-300" />
+                <span className="absolute start-0 bottom-0 h-8 w-8 border-s-2 border-b-2 border-emerald-300" />
+                <span className="absolute end-0 bottom-0 h-8 w-8 border-e-2 border-b-2 border-emerald-300" />
                 {!preview ? (
-                  <span className="scan-line absolute inset-x-3 h-px bg-amber-300/80" />
+                  <span className="scan-line absolute inset-x-3 h-px bg-emerald-300/80" />
                 ) : null}
               </div>
             </div>
@@ -351,7 +351,7 @@ export function IdentifyPage() {
         <div className="mt-5 space-y-3">
           {phase === 'preview' && preview ? (
             <>
-              <p className="text-center text-xs text-amber-100/70">
+              <p className="text-center text-xs text-emerald-100/70">
                 {ui.analyzeHint}
               </p>
               <div className="grid grid-cols-2 gap-3">
@@ -374,7 +374,7 @@ export function IdentifyPage() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-amber-200/80 hover:text-white"
+                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-emerald-200/80 hover:text-white"
                 >
                   <Upload className="size-5" aria-hidden />
                   <span className="text-xs">رفع</span>
@@ -385,25 +385,25 @@ export function IdentifyPage() {
                   onClick={() => void handleCapture()}
                   disabled={!camera.stream}
                   className={cn(
-                    'flex size-[72px] items-center justify-center rounded-full border-[3px] border-amber-300',
+                    'flex size-[72px] items-center justify-center rounded-full border-[3px] border-emerald-300',
                     'bg-white/10 transition-transform active:scale-95',
                     'disabled:opacity-40',
                   )}
                   aria-label="التقاط صورة"
                 >
-                  <span className="size-14 rounded-full bg-gradient-to-br from-amber-300 to-amber-500" />
+                  <span className="size-14 rounded-full bg-gradient-to-br from-emerald-300 to-emerald-500" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => void start()}
-                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-amber-200/80 hover:text-white"
+                  className="touch-target inline-flex flex-col items-center justify-center gap-1 text-emerald-200/80 hover:text-white"
                 >
                   <Camera className="size-5" aria-hidden />
                   <span className="text-xs">كاميرا</span>
                 </button>
               </div>
-              <p className="text-center text-xs text-amber-100/60">{ui.tipLine}</p>
+              <p className="text-center text-xs text-emerald-100/60">{ui.tipLine}</p>
             </>
           )}
 
