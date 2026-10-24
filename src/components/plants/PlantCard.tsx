@@ -17,16 +17,24 @@ export function PlantCard({ plant, className }: PlantCardProps) {
   return (
     <article
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-2xl glass-panel hover-lift',
+        'group relative flex flex-col overflow-hidden rounded-2xl sm:rounded-3xl',
+        'glass-panel hover-lift',
         className,
       )}
     >
-      <Link to={`/plants/${plant.id}`} className="relative block aspect-[4/3] overflow-hidden bg-surface">
+      <Link
+        to={`/plants/${plant.id}`}
+        className="relative block aspect-[4/3] overflow-hidden bg-surface"
+      >
         <img
           src={plant.imageUrl}
           alt={plant.arabicName}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
+        />
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-brand-dark/35 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          aria-hidden
         />
       </Link>
 
@@ -36,23 +44,23 @@ export function PlantCard({ plant, className }: PlantCardProps) {
         aria-label={favorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
         aria-pressed={favorite}
         className={cn(
-          'absolute top-2 start-2 touch-target inline-flex items-center justify-center',
-          'rounded-xl glass-strong text-muted',
-          'transition-all duration-200 hover:text-brand hover:scale-105',
-          favorite && 'text-brand border-brand/30',
+          'absolute top-2.5 start-2.5 touch-target inline-flex items-center justify-center',
+          'rounded-xl glass-strong text-muted shadow-sm',
+          'transition-all duration-250 hover:text-brand hover:scale-110',
+          favorite && 'text-brand border-brand/35 shadow-[0_0_16px_rgba(40,107,69,0.25)]',
         )}
       >
         <Heart
-          className={cn('size-4', favorite && 'fill-current')}
+          className={cn('size-4 transition-transform', favorite && 'fill-current scale-110')}
           aria-hidden
         />
       </button>
 
-      <div className="flex flex-1 flex-col gap-2.5 p-3.5 sm:p-4">
+      <div className="flex flex-1 flex-col gap-2.5 p-4 sm:p-5">
         <div>
           <Link
             to={`/plants/${plant.id}`}
-            className="block text-base font-bold text-ink hover:text-brand transition-colors"
+            className="block text-base font-extrabold tracking-tight text-ink transition-colors hover:text-brand"
           >
             {plant.arabicName}
           </Link>

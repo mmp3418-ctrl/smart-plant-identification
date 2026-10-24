@@ -10,9 +10,9 @@ import { fadeUp, staggerContainer } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
 const accentBorder: Record<string, string> = {
-  amber: 'border-brand',
-  gold: 'border-sage',
-  slate: 'border-soil-brown',
+  amber: 'border-s-brand',
+  gold: 'border-s-sage',
+  slate: 'border-s-soil-brown',
 }
 
 export function HomePage() {
@@ -22,27 +22,31 @@ export function HomePage() {
 
   return (
     <div>
-      <section className="glass-panel border-b border-white/40 dark:border-stone-700/40">
-        <div className="container-app py-8 sm:py-10 lg:py-12">
+      <section className="relative overflow-hidden border-b border-white/40 glass-panel dark:border-stone-700/40">
+        <div
+          className="pointer-events-none absolute -top-24 end-[-10%] size-72 rounded-full bg-sage/40 blur-3xl dark:bg-brand/20"
+          aria-hidden
+        />
+        <div className="container-app relative py-9 sm:py-12 lg:py-14">
           <motion.div
-            className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"
+            className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end"
             variants={staggerContainer}
             initial="hidden"
             animate="show"
           >
             <motion.div variants={fadeUp}>
               {hero.badge ? (
-                <Badge variant={hero.badge.variant ?? 'brand'} className="mb-3">
+                <Badge variant={hero.badge.variant ?? 'brand'} className="mb-4">
                   {hero.badge.label}
                 </Badge>
               ) : null}
-              <h1 className="text-balance text-2xl font-extrabold leading-snug text-ink sm:text-3xl lg:text-[2.15rem]">
+              <h1 className="text-balance text-3xl font-extrabold leading-[1.25] tracking-tight text-ink sm:text-4xl lg:text-[2.35rem]">
                 {hero.title}
                 {hero.titleHighlight ? (
                   <span className="text-brand"> {hero.titleHighlight}</span>
                 ) : null}
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
+              <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
                 {hero.subtitle}
               </p>
             </motion.div>
@@ -73,24 +77,24 @@ export function HomePage() {
           </motion.div>
 
           <motion.div
-            className="mt-7 max-w-2xl"
-            initial={{ opacity: 0, y: 12 }}
+            className="mt-8 max-w-2xl"
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.4 }}
+            transition={{ delay: 0.22, duration: 0.45 }}
           >
             <PlantSearchField placeholder={hero.searchPlaceholder} />
           </motion.div>
         </div>
       </section>
 
-      <section className="container-app py-8 sm:py-10 lg:py-12">
-        <div className="mb-5 flex items-end justify-between gap-3">
+      <section className="container-app py-9 sm:py-12 lg:py-14">
+        <div className="mb-6 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-ink sm:text-xl">
+            <h2 className="text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
               {popularSection.title}
             </h2>
             {popularSection.description ? (
-              <p className="mt-1 text-sm text-muted">
+              <p className="mt-1.5 text-sm text-muted">
                 {popularSection.description}
               </p>
             ) : null}
@@ -98,7 +102,7 @@ export function HomePage() {
           {popularSection.actionTo && popularSection.actionLabel ? (
             <Link
               to={popularSection.actionTo}
-              className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand hover:text-brand-dark"
+              className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-brand transition-colors hover:text-brand-dark"
             >
               {popularSection.actionLabel}
               <ArrowLeft className="size-4" aria-hidden />
@@ -107,11 +111,11 @@ export function HomePage() {
         </div>
 
         <motion.div
-          className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 lg:grid-cols-3"
+          className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 lg:grid-cols-3 lg:gap-5"
           variants={staggerContainer}
           initial="hidden"
           whileInView="show"
-          viewport={{ once: true, amount: 0.1 }}
+          viewport={{ once: true, amount: 0.08 }}
         >
           {popular.map((plant) => (
             <motion.div key={plant.id} variants={fadeUp}>
@@ -121,10 +125,10 @@ export function HomePage() {
         </motion.div>
       </section>
 
-      <section className="glass-panel border-t border-white/40 dark:border-stone-700/40">
-        <div className="container-app py-8 sm:py-10">
+      <section className="border-t border-white/40 glass-panel dark:border-stone-700/40">
+        <div className="container-app py-9 sm:py-12">
           <motion.div
-            className="grid gap-6 sm:grid-cols-3"
+            className="grid gap-5 sm:grid-cols-3 sm:gap-6"
             variants={staggerContainer}
             initial="hidden"
             whileInView="show"
@@ -135,12 +139,14 @@ export function HomePage() {
                 key={feature.id}
                 variants={fadeUp}
                 className={cn(
-                  'border-s-2 ps-4 transition-transform duration-300 hover:-translate-y-1',
-                  accentBorder[feature.accent ?? 'amber'] ?? 'border-brand',
+                  'rounded-2xl border border-white/50 border-s-[3px] bg-surface/45 p-4 ps-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:border-white/10 dark:bg-brand-dark/30 sm:p-5',
+                  accentBorder[feature.accent ?? 'amber'] ?? 'border-s-brand',
                 )}
               >
-                <h3 className="text-sm font-bold text-ink">{feature.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted">
+                <h3 className="text-sm font-extrabold text-ink">
+                  {feature.title}
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted">
                   {feature.description}
                 </p>
               </motion.div>

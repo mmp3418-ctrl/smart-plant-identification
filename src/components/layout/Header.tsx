@@ -58,21 +58,21 @@ export function Header() {
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
-      'inline-flex min-h-11 items-center px-3 text-sm font-medium transition-all duration-200 rounded-xl',
+      'inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold transition-all duration-200',
       isActive
-        ? 'bg-brand-soft text-brand'
-        : 'text-muted hover:text-ink hover:bg-white/5',
+        ? 'bg-brand-soft text-brand shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-brand)_18%,transparent)]'
+        : 'text-muted hover:bg-brand-soft/45 hover:text-ink',
     )
 
   return (
-    <header className="sticky top-0 z-50 glass-strong border-b border-white/10">
+    <header className="sticky top-0 z-50 border-b border-white/30 glass-strong dark:border-white/10">
       <div className="container-app flex h-14 items-center justify-between gap-3 sm:h-16">
         <Link
           to="/"
-          className="flex min-h-11 items-center gap-2.5 shrink-0 transition-transform duration-200 hover:scale-[1.02]"
+          className="flex min-h-11 shrink-0 items-center gap-2.5 transition-transform duration-200 hover:scale-[1.02]"
           onClick={() => setMobileOpen(false)}
         >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-white shadow-sm transition-transform duration-200 hover:scale-105">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-white shadow-[0_8px_20px_-10px_rgba(40,107,69,0.7)] transition-transform duration-200 hover:scale-105">
             <Leaf className="size-4" strokeWidth={2.25} aria-hidden />
           </span>
           <span className="hidden sm:flex flex-col leading-none">

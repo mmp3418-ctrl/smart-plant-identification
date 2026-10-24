@@ -9,6 +9,7 @@ import {
   Leaf,
   AlertCircle,
 } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
 import { Button, Spinner } from '@/components/ui'
 import { IdentifyLoadingOverlay } from '@/components/system/IdentifyLoadingOverlay'
 import { useCamera } from '@/hooks/useCamera'
@@ -239,9 +240,11 @@ export function IdentifyPage() {
 
   return (
     <div className="relative flex min-h-dvh flex-col bg-[#142D21] text-slate-100">
-      {phase === 'analyzing' ? (
-        <IdentifyLoadingOverlay steps={ui.loadingSteps} />
-      ) : null}
+      <AnimatePresence>
+        {phase === 'analyzing' ? (
+          <IdentifyLoadingOverlay key="identify-loader" steps={ui.loadingSteps} />
+        ) : null}
+      </AnimatePresence>
 
       <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link
@@ -263,7 +266,7 @@ export function IdentifyPage() {
       <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-4 pb-6 sm:px-6">
         <div
           className={cn(
-            'relative min-h-[52vh] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_0_40px_-16px_rgba(245,158,11,0.35)] transition-shadow',
+            'relative min-h-[52vh] flex-1 overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_0_48px_-16px_rgba(40,107,69,0.45)] transition-shadow',
             isDragging && 'ring-2 ring-emerald-300 ring-offset-2 ring-offset-[#142D21]',
           )}
           onDragOver={handleDragOver}

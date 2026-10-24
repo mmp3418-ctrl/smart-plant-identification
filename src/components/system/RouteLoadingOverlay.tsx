@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
-import { cn } from '@/lib/cn'
-
-const DISPLAY_MS = 700
-const FADE_MS = 450
+import { motion, AnimatePresence } from 'framer-motion'
 
 /**
- * Full-screen green botanical loader on route changes.
+ * Sleek top progress rail on route changes — replaces the old full-screen spinner.
  */
 export function RouteLoadingOverlay() {
   const location = useLocation()
   const [visible, setVisible] = useState(false)
-  const [exiting, setExiting] = useState(false)
   const [isFirst, setIsFirst] = useState(true)
 
   useEffect(() => {
@@ -21,31 +16,31 @@ export function RouteLoadingOverlay() {
       return
     }
 
-    setExiting(false)
     setVisible(true)
-
-    const exitTimer = window.setTimeout(() => setExiting(true), DISPLAY_MS)
-    const hideTimer = window.setTimeout(() => {
-      setVisible(false)
-      setExiting(false)
-    }, DISPLAY_MS + FADE_MS)
-
-    return () => {
-      window.clearTimeout(exitTimer)
-      window.clearTimeout(hideTimer)
-    }
+    const hide = window.setTimeout(() => setVisible(false), 720)
+    return () => window.clearTimeout(hide)
   }, [location.pathname, location.search, isFirst])
 
-  if (!visible) return null
-
   return (
-    <div className={cn(exiting && 'pointer-events-none')}>
-      <GreenLoadingOverlay
-        exiting={exiting}
-        message="جارٍ تحميل الصفحة…"
-        blocking={!exiting}
-        zIndexClass="z-[90]"
-      />
-    </div>
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          className="pointer-events-none fixed inset-x-0 top-0 z-[90] h-[3px] overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          aria-hidden
+        >
+          <motion.div
+            className="h-full origin-right rounded-full bg-gradient-to-l from-brand via-accent to-sage shadow-[0_0_12px_rgba(40,107,69,0.55)]"
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+            style={{ transformOrigin: 'right center' }}
+          />
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }

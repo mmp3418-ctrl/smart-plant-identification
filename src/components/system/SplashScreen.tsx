@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { GreenLoadingOverlay } from '@/components/system/GreenLoadingOverlay'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Leaf } from 'lucide-react'
 
 const TITLE = 'نظام التعرف على النباتات الذكي'
-const MIN_DISPLAY_MS = 2500
+const MIN_DISPLAY_MS = 2200
 
 interface SplashScreenProps {
   onComplete: () => void
 }
 
+/** Refined brand splash — no basic spinner; soft plant pulse + typewriter. */
 export function SplashScreen({ onComplete }: SplashScreenProps) {
   const [typed, setTyped] = useState('')
   const [exiting, setExiting] = useState(false)
@@ -23,8 +25,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
         window.clearInterval(interval)
         setTypeDone(true)
       }
-    }, 55)
-
+    }, 48)
     return () => window.clearInterval(interval)
   }, [])
 
@@ -37,20 +38,22 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
       if (completedRef.current) return
       completedRef.current = true
       setExiting(true)
-      exitTimer = window.setTimeout(onComplete, 650)
+      exitTimer = window.setTimeout(onComplete, 500)
     }
 
     function scheduleFinish() {
       const elapsed = performance.now() - started
-      const wait = Math.max(0, MIN_DISPLAY_MS - elapsed)
-      waitTimer = window.setTimeout(beginExit, wait)
+      waitTimer = window.setTimeout(
+        beginExit,
+        Math.max(0, MIN_DISPLAY_MS - elapsed),
+      )
     }
 
     if (document.readyState === 'complete') {
       scheduleFinish()
     } else {
       window.addEventListener('load', scheduleFinish, { once: true })
-      waitTimer = window.setTimeout(scheduleFinish, MIN_DISPLAY_MS + 500)
+      waitTimer = window.setTimeout(scheduleFinish, MIN_DISPLAY_MS + 400)
     }
 
     return () => {
@@ -61,13 +64,46 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
   }, [onComplete])
 
   return (
-    <GreenLoadingOverlay
-      exiting={exiting}
-      title={TITLE}
-      typedTitle={typed}
-      typeDone={typeDone}
-      message="تعريف النباتات والملاءمة البيئية"
-      zIndexClass="z-[100]"
-    />
+    <AnimatePresence>
+      {!exiting ? (
+        <motion.div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#142D21] text-stone-100"
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
+          role="status"
+          aria-label="تحميل نبْتة"
+        >
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(ellipse at 50% 40%, rgba(16,185,129,0.22), transparent 55%)',
+            }}
+            aria-hidden
+          />
+          <motion.div
+            className="relative mb-6 flex size-24 items-center justify-center rounded-full border border-emerald-300/30 bg-emerald-950/40 sm:size-28"
+            animate={{ scale: [1, 1.06, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Leaf className="size-11 text-emerald-200 sm:size-12" strokeWidth={1.5} />
+            <span className="absolute inset-0 rounded-full shadow-[0_0_40px_rgba(110,231,183,0.35)]" />
+          </motion.div>
+          <p className="mb-2 text-sm font-semibold tracking-wide text-emerald-200/90">
+            نبْتة
+          </p>
+          <h1
+            className={`min-h-[2.6em] max-w-lg px-6 text-center text-xl font-extrabold leading-relaxed sm:text-2xl ${typeDone ? 'title-glow' : ''}`}
+          >
+            {typed}
+            {!typeDone ? <span className="typewriter-caret" aria-hidden /> : null}
+          </h1>
+          <p className="mt-3 text-sm text-emerald-100/70">
+            تعريف النباتات والملاءمة البيئية
+          </p>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }

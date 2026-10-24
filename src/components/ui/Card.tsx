@@ -9,9 +9,9 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const paddingStyles = {
   none: '',
-  sm: 'p-3',
+  sm: 'p-3.5',
   md: 'p-4 sm:p-5',
-  lg: 'p-5 sm:p-6',
+  lg: 'p-5 sm:p-7',
 } as const
 
 export function Card({
@@ -25,10 +25,10 @@ export function Card({
   return (
     <div
       className={cn(
-        'rounded-2xl',
+        'rounded-2xl sm:rounded-3xl',
         glass
           ? 'glass-panel'
-          : 'border border-line bg-surface',
+          : 'border border-line bg-surface shadow-[0_8px_30px_-18px_rgba(20,45,33,0.18)]',
         hoverable && 'hover-lift cursor-pointer',
         paddingStyles[padding],
         className,
@@ -55,13 +55,17 @@ export function CardHeader({
 }: CardHeaderProps) {
   return (
     <div
-      className={cn('mb-3 flex items-start justify-between gap-3', className)}
+      className={cn('mb-4 flex items-start justify-between gap-3', className)}
       {...props}
     >
       <div className="min-w-0">
-        <h3 className="text-base font-bold text-ink sm:text-lg">{title}</h3>
+        <h3 className="text-base font-extrabold tracking-tight text-ink sm:text-lg">
+          {title}
+        </h3>
         {description ? (
-          <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted">
+            {description}
+          </p>
         ) : null}
       </div>
       {action}

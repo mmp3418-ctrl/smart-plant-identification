@@ -136,23 +136,23 @@
     "loadingSteps": [
       {
         "id": "scan",
-        "label": "فحص تفاصيل الورقة…",
-        "durationMs": 1600
+        "label": "جاري فحص الخصائص الحيوية للورقة...",
+        "durationMs": 1800
       },
       {
-        "id": "classify",
-        "label": "مطابقة التصنيف العلمي…",
-        "durationMs": 1700
-      },
-      {
-        "id": "diseases",
-        "label": "تحليل الأمراض والآفات…",
+        "id": "dna",
+        "label": "تحليل البصمة الوراثية للنبتة...",
         "durationMs": 1900
       },
       {
+        "id": "disease",
+        "label": "استخلاص التشخيص والأمراض...",
+        "durationMs": 1800
+      },
+      {
         "id": "care",
-        "label": "تجهيز جدول العناية…",
-        "durationMs": 1500
+        "label": "تجهيز دليل العناية الشامل...",
+        "durationMs": 1600
       }
     ]
   }
